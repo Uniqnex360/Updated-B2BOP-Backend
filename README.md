@@ -17,8 +17,6 @@ B2BOP is a backend application designed to facilitate business-to-business trans
 - Django 
 - MongoDB
 - JWT for authentication
-- Mongoose for object modeling
-- dotenv for environment variable management
 
 ## Getting Started
 
