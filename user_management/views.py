@@ -1,0 +1,486 @@
+from django.shortcuts import render
+from .models import *
+from django.http import JsonResponse
+from b2bop_project.custom_mideleware import SIMPLE_JWT, createJsonResponse, createCookies,obtainManufactureIdFromToken, obtainUserIdFromToken, obtainUserRoleFromToken
+from rest_framework.decorators import api_view
+from django.middleware import csrf
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.parsers import JSONParser
+import jwt
+from bson import ObjectId
+import pandas as pd
+from b2bop_project.crud import DatabaseModel
+
+
+@api_view(('GET', 'POST'))
+@csrf_exempt
+def loginUser(request):
+    jsonRequest = JSONParser().parse(request)
+    user_data_obj = list(user.objects(**jsonRequest)) 
+    token = ''
+    valid = False
+    if user_data_obj:
+        user_data_obj = user_data_obj[0]
+        payload = {
+            'id': str(user_data_obj.id),
+            'name': user_data_obj.username,
+            'email': user_data_obj.email,
+            'role_name': user_data_obj.role_id.name,
+            # 'max_age': SIMPLE_JWT['SESSION_COOKIE_MAX_AGE'],
+            'manufacture_unit_id' : str(user_data_obj.manufacture_unit_id.id)
+        }
+        token = jwt.encode(payload, SIMPLE_JWT['SIGNING_KEY'], algorithm=SIMPLE_JWT['ALGORITHM'])
+        valid = True
+        response = createJsonResponse(request, token)
+
+        response = createCookies(token, response)
+        # csrf.get_token(request)
+        response.data['data']['valid'] = valid
+    else:
+        response = createJsonResponse(request, token)
+        valid = False   
+        response.data['data']['valid'] = valid
+        response.data['_c1'] = ''
+    return response
+
+
+def obtainProductCategoryList(request):
+    manufacture_unit_id = obtainManufactureIdFromToken(request)
+    pipeline =[
+        {
+            "$match" : {
+                "manufacture_unit_id" : ObjectId(manufacture_unit_id)
+            }
+        },
+        {
+        '$lookup': {
+            'from': 'product_category',
+            'localField': 'product_category_list',
+            'foreignField': '_id',
+            'as': 'product_category_ins'
+        }
+        },
+        {"$unwind" : "$product_category_ins"},
+        {
+           "$project" :{
+            "_id":0,
+            "id":{"$toString" : "$product_category_ins._id"},
+            "name" : "$product_category_ins.name",
+           }
+        }
+    ]
+    product_category_list = list(manufacture_unit_product_category_config.objects.aggregate(*(pipeline)))
+    return product_category_list
+
+
+def obtainProductSubCategoryList(request):
+    product_category_id = request.GET.get('product_category_id')
+    manufacture_unit_id = obtainManufactureIdFromToken(request)
+    pipeline =[
+        {
+            "$match" : {
+                "manufacture_unit_id" : ObjectId(manufacture_unit_id),
+                "product_category_id" : ObjectId(product_category_id)
+            }
+        },
+        {
+        '$lookup': {
+            'from': 'product_sub_category',
+            'localField': 'product_sub_category_list',
+            'foreignField': '_id',
+            'as': 'product_sub_category_ins'
+        }
+        },
+        {"$unwind" : "$product_sub_category_ins"},
+        {
+           "$project" :{
+            "_id":0,
+            "id":{"$toString" : "$product_sub_category_ins._id"},
+            "name" : "$product_sub_category_ins.name",
+           }
+        }
+    ]
+    product_sub_category_list = list(product_category_product_sub_category_config.objects.aggregate(*(pipeline)))
+    return product_sub_category_list
+
+
+def obtainbrandList(request):
+    product_sub_category_id = request.GET.get('product_sub_category_id')
+    pipeline =[
+        {
+            "$match" : {
+                "product_sub_category_id_str" : product_sub_category_id
+            }
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "id" : {"$toString" : "$_id"},
+            "name" : 1
+           }
+        }
+    ]
+    product_list = list(brand.objects.aggregate(*(pipeline)))
+    return product_list
+
+
+def obtainProductsList(request):
+    product_sub_category_id = request.GET.get('product_sub_category_id')
+    brand_id = request.GET.get('brand_id')
+    manufacture_unit_id = obtainManufactureIdFromToken(request)
+    if brand_id != None:
+        match = {
+                "manufacture_unit_id" : ObjectId(manufacture_unit_id),
+                "product_sub_category_id" : ObjectId(product_sub_category_id),
+                "brand_id" : ObjectId(brand_id)
+            }
+    else:
+        match = {
+                "manufacture_unit_id" : ObjectId(manufacture_unit_id),
+                "product_sub_category_id" : ObjectId(product_sub_category_id),
+            }
+    pipeline =[
+        {
+            "$match" : match
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "id" : {"$toString" : "$_id"},
+            "name" : 1,
+            "description" : 1,
+            "price" : 1,
+            "is_avaliable" : 1,
+            "currency" : 1,
+            "stock_quantity" :1,
+            "product_image_list" : 1,
+            "product_video_list" :1,
+            "colour" : 1,
+            'height' : 1,
+            'weight' : 1,
+           }
+        }
+    ]
+    product_list = list(products.objects.aggregate(*(pipeline)))
+    return product_list
+
+
+
+@csrf_exempt
+def createOrUpdateUserCartItem(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    json_request['user_id'] = ObjectId(json_request.get('user_id'))
+    json_request['product_id'] = ObjectId(json_request.get('product_id'))
+    pipeline =[
+        {
+            "$match" : {
+                "user_id" : json_request['user_id'],
+                "product_id" : json_request['product_id']
+            }
+        },
+        {
+           "$project" :{
+                "_id":1
+           }
+        }
+    ]
+    user_cart_item_obj = list(user_cart_item.objects.aggregate(*(pipeline)))
+    if user_cart_item_obj != []:
+        user_cart_item.objects(id = user_cart_item_obj[0]['_id']).update(inc__quantity = json_request['quantity'])
+        data['is_updated'] = True
+    else:
+        user_cart_item(**json_request).save()
+        data['is_created'] = True
+    return data
+
+def obtainUserCartItemList(request):
+    user_id = obtainUserIdFromToken(request)
+    pipeline =[
+        {
+            "$match" : {
+                "user_id" : ObjectId(user_id),
+                "status" : "pending"
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "products",
+                "localField" : "product_id",
+                "foreignField" : "_id",
+                "as" : "products_ins"
+            }
+        },
+        {"$unwind" : "$products_ins"},
+        {
+           "$project" :{
+                "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "name" : "$products_ins.name",
+                "description" : "$products_ins.description",
+                "price" : "$products_ins.price",
+                "currency" : "$products_ins.currency",
+                "primary_image" : "$products_ins.primary_image",
+                "colour" : "$products_ins.colour",
+                "quantity" : 1
+           }
+        }
+    ]
+    user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+    return user_cart_item_list
+
+@csrf_exempt
+def updateOrDeleteUserCartItem(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    if json_request['is_delete'] == True:
+        user_cart_item.objects(id = json_request['id']).delete()
+        data['is_deleted'] = True
+    else:
+        user_cart_item.objects(id = json_request['id']).update(inc__quantity = json_request['quantity'])
+        data['is_updated'] = True
+    return data
+
+def totalCheckOutAmount(request):
+    user_id = obtainUserIdFromToken(request)
+    pipeline = [
+        {
+            "$match" : {
+                "user_id" : ObjectId(user_id),
+                "status" : "pending"
+            }
+        },
+        {
+           "$group" :{
+                "_id": None,
+                'total_amount': {'$sum': '$price'}
+           }
+        },
+        {
+           "$project" :{
+                "_id": 0,
+                'total_amount': "$total_amount"
+           }
+        }
+    ]
+    user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+    return user_cart_item_list
+
+
+@csrf_exempt
+def createORUpdateManufactureUnit(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    
+    if json_request['manufacture_unit_id'] != "":
+        DatabaseModel.update_documents(manufacture_unit.objects,{"id" : json_request['manufacture_unit_id']},json_request['manufacture_unit_obj'])
+        data['is_updated'] = True
+        data['manufacture_unit_id'] = json_request['manufacture_unit_id']
+    else:
+        manufacture_obj = DatabaseModel.save_documents(user,json_request['manufacture_unit_obj'])
+        data['is_created'] = True
+        data['manufacture_unit_id'] = str(manufacture_obj.id)
+    return data
+
+def obtainManufactureUnitList(request):
+    role_name = obtainUserRoleFromToken(request)
+    data = dict()
+    manufacture_unit_list = list()
+    if role_name == "admin":
+        pipeline = [
+            {
+            "$project" :{
+                    "_id": 0,
+                    "id" : {"$toString" : "$_id"},
+                    "name" : 1
+            }
+            }
+        ]
+        manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    data['manufacture_unit_list'] = manufacture_unit_list 
+    return data
+
+@csrf_exempt
+def createORUpdateUser(request):
+    data = dict()
+    role_name = obtainUserRoleFromToken(request)
+    json_request = JSONParser().parse(request)
+    manufacture_unit_id = obtainManufactureIdFromToken(request)
+    if role_name == "admin":
+        manufacture_unit_id = ObjectId(json_request['manufacture_unit_id'])
+        
+    
+    json_request['user_obj']['role_id'] = ObjectId(json_request['user_obj']['role_id'])
+    
+    if json_request['user_id'] != "":
+        DatabaseModel.update_documents(user.objects,{"id" : json_request['user_id']},json_request['user_obj'])
+        data['is_updated'] = True
+    else:
+        json_request['user_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+        DatabaseModel.save_documents(user,json_request['user_obj'])
+        data['is_created'] = True
+    return data
+
+
+
+def obtainRolesForCreatingUser(request):
+    role_name = obtainUserRoleFromToken(request)
+    if role_name == "admin":
+        match = {"name" : {"$ne" : "role_name"}}
+    elif role_name == "manufacturers/distributors":
+        match = {"name" : {"$nin" : ["manufacturers/distributors", 'admin']}}
+    pipeline = [
+        {
+            "$match" : match
+        },
+        {
+           "$project" :{
+                "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "name" : 1
+           }
+        }
+    ]
+    role_list = list(role.objects.aggregate(*(pipeline)))
+    return role_list
+    
+
+def checkEmailExistOrNot(request):
+    email = request.GET.get('email')
+    data = dict()
+    pipeline = [
+        {
+            "$match" : {"email" : email}
+        },
+        {
+            "$limit" : 1
+        },
+        {
+           "$project" :{
+                "_id": 1
+           }
+        }
+    ]
+    email_obj = list(user.objects.aggregate(*(pipeline)))
+    if email_obj != None:
+        data['is_exist'] = True
+    else:
+        data['is_exist'] = False
+    return data
+
+@csrf_exempt
+def createORUpdateUser(request):
+    data = dict()
+    manufacture_unit_id = obtainManufactureIdFromToken(request)
+    json_request = JSONParser().parse(request)
+    json_request['user_obj']['role_id'] = ObjectId(json_request['user_obj']['role_id'])
+    
+    if json_request['user_id'] != "":
+        DatabaseModel.update_documents(user.objects,{"id" : json_request['user_id']},json_request['user_obj'])
+        data['is_updated'] = True
+    else:
+        json_request['user_obj']['manufacture_unit_id'] = ObjectId(json_request['user_obj']['manufacture_unit_id'])
+        DatabaseModel.save_documents(user,json_request['user_obj'])
+        data['is_created'] = True
+    return data
+
+
+@csrf_exempt
+def updateUserProfile(request):
+    pass
+
+
+@csrf_exempt
+def upload_file(request):
+    data = dict()
+    data['status'] = False
+    if 'file' not in request.FILES:
+        print("hello")
+        return data
+
+    file = request.FILES['file']
+    try:
+        if file.name.endswith('.xlsx'):
+            df = pd.read_excel(file, header=1)
+            print("ddddddddddddffffffffffff",df,"\n\n\n\n\n")
+            for column in df.columns:
+                print(column)
+        elif file.name.endswith('.csv') or file.name.endswith('.txt'):
+            df = pd.read_csv(file)
+        else:
+            print("wwwwwwwwwwwwwwwwww")
+            return data
+    except Exception as e:
+        print("wwwwwwwwwwwwwwwwww",e,"\n\n\n")
+        return data
+    l = list()
+    for i in range(len(df)):
+        row_dict = df.iloc[i].to_dict()
+        Handle = row_dict['Handle'] 
+        Title = row_dict['Title']
+        Vendor = row_dict['Vendor']
+        category_string = row_dict['Product Category']
+        Tags = row_dict['Tags']
+        KeyFeatures = row_dict['Key Features (product.metafields.custom.key_features1)']
+        options = []
+        product_image = row_dict['Image Src']
+        if isinstance(Title, str) == False:
+            is_varient = True
+        else:
+            is_varient = False
+            option_name_list = list()
+        option_number = 1
+        while f'Option{option_number} Name' in row_dict and f'Option{option_number} Value' in row_dict:
+            option_name = row_dict[f'Option{option_number} Name']
+            option_value = row_dict[f'Option{option_number} Value']
+            if is_varient:
+                option_name = option_name_list[option_number-1]
+            else:
+                option_name_list.append(option_name)
+            if isinstance(option_name, str) :
+                options.append({"name":option_name,"value": option_value})
+            option_number += 1
+        product_obj = DatabaseModel.get_document(Products.objects,{"Handle":Handle})
+        if product_obj==None:
+            category_list = []
+            if isinstance(category_string, str):
+                category_list = [item.strip() for item in category_string.split('>')]
+            product_type_obj = DatabaseModel.get_document(product_type.objects,{"name":category_list[2]})
+            if product_type_obj== None:
+                product_type_obj = DatabaseModel.save_documents(product_type,{'name':category_list[2]})
+            section_obj = DatabaseModel.get_document(section.objects,{"name":category_list[1]})
+            if section_obj== None:
+                section_obj = DatabaseModel.save_documents(section,{'name':category_list[1],'product_type_list':[product_type_obj.id]})
+            category_obj = DatabaseModel.get_document(category.objects,{"name":category_list[0]})
+            if category_obj== None:
+                category_obj = DatabaseModel.save_documents(category,{'name':category_list[0],'section_list':[section_obj.id]})
+            if product_obj == None:
+                product_obj = DatabaseModel.save_documents(Products,{'productName':Title,"Handle":Handle,"product_type_id":product_type_obj.id,"ManufacturerName":Vendor,"tags":Tags,"Key_features":KeyFeatures,"ImageURL":[product_image]})
+        else:
+            if isinstance(product_image, str):
+                DatabaseModel.update_documents(Products.objects,{"id":product_obj.id},{"push__ImageURL":product_image})
+        varient_sku = row_dict['Variant SKU']
+        variant_Price = row_dict['Variant Price']
+        Variants_opt_id_list = list()
+        for i in options:
+            option_value_id = ""
+            if i['name'] =="Wood Type":
+                wood_type_obj = DatabaseModel.get_document(wood_type.objects,{"name":i['value']})
+                if wood_type_obj:
+                    option_value_id = wood_type_obj.id
+                else:
+                    wood_type_obj = DatabaseModel.save_documents(wood_type,{'name':i['value']})
+                    option_value_id = wood_type_obj.id
+            if i['name'] =="Size":
+                size_option_obj = DatabaseModel.get_document(size_option.objects,{"name":i['value']})
+                if size_option_obj:
+                    option_value_id = size_option_obj.id
+                else:
+                    size_option_obj = DatabaseModel.save_documents(size_option,{'name':i['value']})
+                    option_value_id = size_option_obj.id
+            Variants_opt_obj = DatabaseModel.save_documents(varient_option,{'varient_count':0,"option_name":i['name'],'option_value_id':str(option_value_id)})
+            Variants_opt_id_list.append(Variants_opt_obj.id)
+        DatabaseModel.save_documents(Variants,{'product_id':product_obj.id,"options":Variants_opt_id_list,"varient_sku":varient_sku,"unfinished_price":0,"finished_price":variant_Price})
+    data=dict()
+    data['status'] = True
+    return data
