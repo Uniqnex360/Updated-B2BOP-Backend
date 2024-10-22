@@ -16,18 +16,23 @@ from b2bop_project.crud import DatabaseModel
 @csrf_exempt
 def loginUser(request):
     jsonRequest = JSONParser().parse(request)
+    print("jsonRequest",jsonRequest,"\n\n\n\n\n\n")
     user_data_obj = list(user.objects(**jsonRequest)) 
     token = ''
     valid = False
     if user_data_obj:
         user_data_obj = user_data_obj[0]
+        manufacture_unit_id = ''
+        role_name = user_data_obj.role_id.name
+        if role_name != "admin":
+            manufacture_unit_id = str(user_data_obj.manufacture_unit_id.id)
         payload = {
             'id': str(user_data_obj.id),
             'name': user_data_obj.username,
             'email': user_data_obj.email,
             'role_name': user_data_obj.role_id.name,
             # 'max_age': SIMPLE_JWT['SESSION_COOKIE_MAX_AGE'],
-            'manufacture_unit_id' : str(user_data_obj.manufacture_unit_id.id)
+            'manufacture_unit_id' : manufacture_unit_id
         }
         token = jwt.encode(payload, SIMPLE_JWT['SIGNING_KEY'], algorithm=SIMPLE_JWT['ALGORITHM'])
         valid = True
@@ -36,10 +41,12 @@ def loginUser(request):
         response = createCookies(token, response)
         # csrf.get_token(request)
         response.data['data']['valid'] = valid
+        response.data['data']['role'] = user_data_obj.role_id.name
     else:
         response = createJsonResponse(request, token)
         valid = False   
         response.data['data']['valid'] = valid
+        response.data['data']['role'] = ""
         response.data['_c1'] = ''
     return response
 
@@ -284,20 +291,47 @@ def createORUpdateManufactureUnit(request):
 
 def obtainManufactureUnitList(request):
     role_name = obtainUserRoleFromToken(request)
+    print("role_name", role_name ,"\n\n\n")
     data = dict()
     manufacture_unit_list = list()
-    if role_name == "admin":
-        pipeline = [
-            {
-            "$project" :{
-                    "_id": 0,
-                    "id" : {"$toString" : "$_id"},
-                    "name" : 1
-            }
-            }
-        ]
-        manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    # if role_name == "admin":
+    pipeline = [
+        {
+        "$project" :{
+                "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "name" : 1,
+                "logo" : 1
+        }
+        }
+    ]
+    manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
     data['manufacture_unit_list'] = manufacture_unit_list 
+    return data
+
+def obtainManufactureUnitDetails(request):
+    data = dict()
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline = [
+        {
+            "$match" : {"_id" : ObjectId(manufacture_unit_id)}
+        },
+        {"$limit" : 1},
+        {
+        "$project" :{
+                "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "name" : 1,
+                "description" : 1,
+                "location" : 1
+        }
+        }
+    ]
+    manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    if len(manufacture_unit_list) > 0:
+        data['manufacture_unit_obj'] = manufacture_unit_list[0] 
+    else:
+        data['manufacture_unit_obj'] = {} 
     return data
 
 @csrf_exempt
@@ -402,16 +436,13 @@ def upload_file(request):
     try:
         if file.name.endswith('.xlsx'):
             df = pd.read_excel(file, header=1)
-            print("ddddddddddddffffffffffff",df,"\n\n\n\n\n")
             for column in df.columns:
                 print(column)
         elif file.name.endswith('.csv') or file.name.endswith('.txt'):
             df = pd.read_csv(file)
         else:
-            print("wwwwwwwwwwwwwwwwww")
             return data
     except Exception as e:
-        print("wwwwwwwwwwwwwwwwww",e,"\n\n\n")
         return data
     l = list()
     for i in range(len(df)):

@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import loginUser, obtainProductCategoryList, obtainProductSubCategoryList, obtainProductsList, obtainbrandList, createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, createORUpdateManufactureUnit, obtainManufactureUnitList, upload_file
+from .views import loginUser, obtainProductCategoryList, obtainProductSubCategoryList, obtainProductsList, obtainbrandList, createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, createORUpdateManufactureUnit, obtainManufactureUnitList, upload_file, obtainManufactureUnitDetails
 
 
 urlpatterns = [
@@ -10,6 +10,7 @@ urlpatterns = [
     #Manufacture Unit creation
     path('createORUpdateManufactureUnit/',createORUpdateManufactureUnit,name="createORUpdateManufactureUnit"),
     path('obtainManufactureUnitList/',obtainManufactureUnitList,name="obtainManufactureUnitList"),
+    path('obtainManufactureUnitDetails/',obtainManufactureUnitDetails,name="obtainManufactureUnitDetails"),
 
     #User creation
     path('obtainRolesForCreatingUser/',obtainRolesForCreatingUser,name="obtainRolesForCreatingUser"),

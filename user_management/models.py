@@ -42,6 +42,7 @@ class manufacture_unit(Document):
     name = fields.StringField()
     description = fields.StringField()
     location = fields.StringField()
+    logo = fields.StringField()
 
 class user(Document):
     first_name = fields.StringField()
