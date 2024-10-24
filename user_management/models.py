@@ -66,12 +66,14 @@ class product_category(Document):
     description = fields.StringField()
     code = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now)
+    manufacture_unit_id_str = fields.StringField()
 
 class product_sub_category(Document):
     name = fields.StringField(required=True)
     description = fields.StringField()
     code = fields.StringField()
     product_category_id = fields.ReferenceField(product_category)
+    manufacture_unit_id_str = fields.StringField()
 
 
 class brand(Document):
@@ -79,14 +81,16 @@ class brand(Document):
     code = fields.StringField()
     product_sub_category_id_str = fields.StringField()
     logo = fields.StringField()
+    manufacture_unit_id_str = fields.StringField()
 
 class products(Document):
     name = fields.StringField(required=True)
     description = fields.StringField()
     price = fields.FloatField(required=True)
-    is_avaliable = fields.BooleanField(default=True)
+    discount_price = fields.FloatField()
+    is_available = fields.BooleanField(default=True)
     currency = fields.StringField(required=True)
-    stock_quantity  = fields.IntField(required=True)
+    stock_quantity = fields.IntField(required=True)
     primary_image = fields.StringField()
     product_image_list = fields.ListField()
     product_video_list = fields.ListField()
@@ -95,22 +99,19 @@ class products(Document):
     updated_date = fields.DateTimeField(default=datetime.now())
     height = fields.FloatField()
     weight = fields.FloatField()
+    sku = fields.StringField() 
+    mpin = fields.StringField()
+    dimensions = fields.StringField()
+    rating = fields.FloatField()
+    review_count = fields.IntField(default=0)
+    warranty_period = fields.StringField()
+    tags = fields.ListField(fields.StringField())
     product_sub_category_id = fields.ReferenceField(product_sub_category)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     brand_id = fields.ReferenceField(brand)
     
 
 
-class manufacture_unit_product_category_config(Document):
-    manufacture_unit_id = fields.ReferenceField(manufacture_unit)
-    product_category_list = fields.ListField(fields.ReferenceField(product_category))
-
-
-
-class product_category_product_sub_category_config(Document):
-    manufacture_unit_id = fields.ReferenceField(manufacture_unit)
-    product_category_id = fields.ReferenceField(product_category)
-    product_sub_category_list = fields.ListField(fields.ReferenceField(product_sub_category))
 
 class user_cart_item(Document):
     user_id = fields.ReferenceField(user)
