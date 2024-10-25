@@ -13,7 +13,7 @@ class DatabaseModel():
     
     def update_documents(queryset, filter={}, json={}):
         data = queryset(**filter).update(**json)
-        return bool(data)
+        return data
     
     def save_documents(queryset,  json={}):
         obj = queryset(**json)

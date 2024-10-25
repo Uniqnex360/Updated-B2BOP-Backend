@@ -1,5 +1,11 @@
 from django.urls import path
-from .views import loginUser, obtainProductCategoryList, obtainProductSubCategoryList, obtainProductsList, obtainbrandList, createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, upload_file
+from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount
+
+
+from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser
+
+
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductSubCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file
 
 
 urlpatterns = [
@@ -27,6 +33,8 @@ urlpatterns = [
     path('updateOrDeleteUserCartItem/',updateOrDeleteUserCartItem,name="updateOrDeleteUserCartItem"),
     path('obtainUserCartItemList/',obtainUserCartItemList,name="obtainUserCartItemList"),
     path('totalCheckOutAmount/',totalCheckOutAmount,name="totalCheckOutAmount"),
+
+    path('productSearch/',productSearch,name="productSearch"),
 
     #Upload File
     path('upload_file/',upload_file,name="upload_file"),

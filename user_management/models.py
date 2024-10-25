@@ -57,6 +57,7 @@ class user(Document):
     profile_image = fields.StringField()
     role_id = fields.ReferenceField(role)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
+    default_address_id = fields.ListField(fields.ReferenceField(address))
     address_id = fields.ListField(fields.ReferenceField(address))
     bank_details_id = fields.ReferenceField(bank_details)
 
@@ -146,3 +147,39 @@ class transaction(Document):
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     bank_details_id = fields.ReferenceField(bank_details)
+
+
+
+class category(Document):
+    id = fields.StringField(required=True)
+    name = fields.StringField(required=True)
+    parent_category = fields.ReferenceField('self', null=True)
+    child_categories = fields.ListField(fields.ReferenceField('self'))
+    breadcrumb = fields.StringField(required=True)
+
+class vendor(Document):
+    name = fields.StringField(required=True)
+    vendor_id = fields.StringField(required=True)
+class product(Document):
+    product_id = fields.StringField(required=True)
+    sku_number = fields.StringField(required=True)
+    product_code = fields.StringField(required=True)
+    item_number = fields.StringField(required=True)
+    model = fields.StringField(required=True)
+    mpn = fields.StringField(required=True)
+    upc_ean = fields.StringField(required=True)
+    
+    # Reference to the lowest category level (Level 6 in this example)
+    category = fields.ReferenceField(category)
+    
+    brand_name = fields.StringField(required=True)
+    manufacturer = fields.StringField(required=True)
+    vendor = fields.ReferenceField(vendor)
+    product_name = fields.StringField(required=True)
+    long_description = fields.StringField(required=True)
+    short_description = fields.StringField(required=True)
+    features = fields.ListField(fields.StringField(required=True))
+    images = fields.ListField(fields.StringField(required=True))
+    
+    # Return policy
+    return_applicable = fields.StringField(required=True,choices=["Yes", "No"])
