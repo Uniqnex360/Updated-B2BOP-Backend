@@ -117,3 +117,41 @@ def totalCheckOutAmount(request):
     ]
     user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
     return user_cart_item_list
+
+def obtainOrderList(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline = [
+        {
+            "$match" : {
+                "manufacture_unit_id_str" : manufacture_unit_id
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "user",
+                "localField" : "customer_id",
+                "foreignField" : "_id",
+                "as" : "user_ins"
+            }
+        },
+        {"$unwind" : "$user_ins"},
+        {
+           "$project" :{
+                "_id": 0,
+                "order_id" : {"$toString" : "$_id"},
+                "dealer_anme" : "$user_ins.username",
+                "order_value" : {"$concat": [{"$toString": "$amount"},"$currency"]},
+                "shipping_service" : "-",
+                "tracking_code" : "-",
+                "order_date": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$creation_date",
+                    }
+                    },
+                "status" : 1
+           }
+        }
+    ]
+    order_list = list(order.objects.aggregate(*(pipeline)))
+    return order_list

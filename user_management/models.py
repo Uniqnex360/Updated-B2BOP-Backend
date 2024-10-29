@@ -62,19 +62,19 @@ class user(Document):
     bank_details_id = fields.ReferenceField(bank_details)
 
 
-class product_category(Document):
-    name = fields.StringField(required=True)
-    description = fields.StringField()
-    code = fields.StringField()
-    creation_date = fields.DateTimeField(default=datetime.now)
-    manufacture_unit_id_str = fields.StringField()
+# class product_category(Document):
+#     name = fields.StringField(required=True)
+#     description = fields.StringField()
+#     code = fields.StringField()
+#     creation_date = fields.DateTimeField(default=datetime.now)
+#     manufacture_unit_id_str = fields.StringField()
 
-class product_sub_category(Document):
-    name = fields.StringField(required=True)
-    description = fields.StringField()
-    code = fields.StringField()
-    product_category_id = fields.ReferenceField(product_category)
-    manufacture_unit_id_str = fields.StringField()
+# class product_sub_category(Document):
+#     name = fields.StringField(required=True)
+#     description = fields.StringField()
+#     code = fields.StringField()
+#     product_category_id = fields.ReferenceField(product_category)
+#     manufacture_unit_id_str = fields.StringField()
 
 
 class brand(Document):
@@ -84,39 +84,86 @@ class brand(Document):
     logo = fields.StringField()
     manufacture_unit_id_str = fields.StringField()
 
-class products(Document):
+# class product(Document):
+#     name = fields.StringField(required=True)
+#     description = fields.StringField()
+#     price = fields.FloatField(required=True)
+#     discount_price = fields.FloatField()
+#     is_available = fields.BooleanField(default=True)
+#     currency = fields.StringField(required=True)
+#     stock_quantity = fields.IntField(required=True)
+#     primary_image = fields.StringField()
+#     product_image_list = fields.ListField()
+#     product_video_list = fields.ListField()
+#     colour = fields.StringField()
+#     creation_date = fields.DateTimeField(default=datetime.now())
+#     updated_date = fields.DateTimeField(default=datetime.now())
+#     height = fields.FloatField()
+#     weight = fields.FloatField()
+#     sku = fields.StringField() 
+#     mpin = fields.StringField()
+#     dimensions = fields.StringField()
+#     rating = fields.FloatField()
+#     review_count = fields.IntField(default=0)
+#     warranty_period = fields.StringField()
+#     tags = fields.ListField(fields.StringField())
+#     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
+#     brand_id = fields.ReferenceField(brand)
+
+class product_category(Document):
     name = fields.StringField(required=True)
-    description = fields.StringField()
-    price = fields.FloatField(required=True)
-    discount_price = fields.FloatField()
-    is_available = fields.BooleanField(default=True)
-    currency = fields.StringField(required=True)
-    stock_quantity = fields.IntField(required=True)
-    primary_image = fields.StringField()
-    product_image_list = fields.ListField()
-    product_video_list = fields.ListField()
-    colour = fields.StringField()
+    level = fields.IntField(default=0)
+    parent_category_id = fields.ReferenceField('self', null=True)
+    child_categories = fields.ListField(fields.ReferenceField('self'))
+    breadcrumb = fields.StringField()
+    manufacture_unit_id_str = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
-    updated_date = fields.DateTimeField(default=datetime.now())
-    height = fields.FloatField()
-    weight = fields.FloatField()
-    sku = fields.StringField() 
-    mpin = fields.StringField()
-    dimensions = fields.StringField()
-    rating = fields.FloatField()
-    review_count = fields.IntField(default=0)
-    warranty_period = fields.StringField()
+    description = fields.StringField()
+    code = fields.StringField()
+
+class vendor(Document):
+    name = fields.StringField(required=True)
+    manufacture_unit_id_str = fields.StringField()
+
+class product(Document):
+    sku_number_product_code_item_number = fields.StringField(required=True)
+    # product_code = fields.StringField(required=True)
+    # item_number = fields.StringField(required=True)
+    model = fields.StringField()
+    mpn = fields.StringField(required=True)
+    upc_ean = fields.StringField()
+    
+    breadcrumb = fields.StringField()
+
+    brand_name = fields.StringField(required=True)
+    product_name = fields.StringField(required=True)
+    long_description = fields.StringField(required=True)
+    short_description = fields.StringField()
+    features = fields.ListField(fields.StringField())
+    images = fields.ListField(fields.StringField())
+    attributes = fields.DictField(default={})
     tags = fields.ListField(fields.StringField())
-    product_sub_category_id = fields.ReferenceField(product_sub_category)
+    msrp = fields.FloatField(default=0.0)              # Manufacturer's Suggested Retail Price
+    currency = fields.StringField(required=True)
+    was_price = fields.FloatField(default=0.0)          # Previous price before discount
+    list_price = fields.FloatField(default=0.0)         # List price of the product
+    discount = fields.FloatField(default=0.0)          #Discount percentage or amount
+    quantity_price = fields.FloatField(default=0.0)     # Price per unit for a specified quantity
+    quantity = fields.FloatField()          #Quantity available or minimum purchase quantity
+    availability = fields.BooleanField(default=True)      # "in stock", "out of stock", "pre-order"
+    return_applicable = fields.BooleanField(default=False)   # Whether returns are allowed or not
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     brand_id = fields.ReferenceField(brand)
+    vendor_id = fields.ReferenceField(vendor)
+    # Reference to the lowest category level (Level 6 in this example)
+    category_id = fields.ReferenceField(product_category)
     
 
 
 
 class user_cart_item(Document):
     user_id = fields.ReferenceField(user)
-    product_id = fields.ReferenceField(products)
+    product_id = fields.ReferenceField(product)
     quantity = fields.IntField(required=True)
     price = fields.FloatField(required=True)    
     creation_date = fields.DateTimeField(default=datetime.now())
@@ -134,6 +181,7 @@ class order(Document):
     currency = fields.StringField(required=True)             
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
+    manufacture_unit_id_str = fields.StringField()
 
 
 
@@ -147,39 +195,3 @@ class transaction(Document):
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     bank_details_id = fields.ReferenceField(bank_details)
-
-
-
-class category(Document):
-    id = fields.StringField(required=True)
-    name = fields.StringField(required=True)
-    parent_category = fields.ReferenceField('self', null=True)
-    child_categories = fields.ListField(fields.ReferenceField('self'))
-    breadcrumb = fields.StringField(required=True)
-
-class vendor(Document):
-    name = fields.StringField(required=True)
-    vendor_id = fields.StringField(required=True)
-class product(Document):
-    product_id = fields.StringField(required=True)
-    sku_number = fields.StringField(required=True)
-    product_code = fields.StringField(required=True)
-    item_number = fields.StringField(required=True)
-    model = fields.StringField(required=True)
-    mpn = fields.StringField(required=True)
-    upc_ean = fields.StringField(required=True)
-    
-    # Reference to the lowest category level (Level 6 in this example)
-    category = fields.ReferenceField(category)
-    
-    brand_name = fields.StringField(required=True)
-    manufacturer = fields.StringField(required=True)
-    vendor = fields.ReferenceField(vendor)
-    product_name = fields.StringField(required=True)
-    long_description = fields.StringField(required=True)
-    short_description = fields.StringField(required=True)
-    features = fields.ListField(fields.StringField(required=True))
-    images = fields.ListField(fields.StringField(required=True))
-    
-    # Return policy
-    return_applicable = fields.StringField(required=True,choices=["Yes", "No"])
