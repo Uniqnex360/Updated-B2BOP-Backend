@@ -436,84 +436,98 @@ def productSearch(request):
     json_request = JSONParser().parse(request)
     search_query = json_request['search_query']
     manufacture_unit_id = json_request['manufacture_unit_id']
+    
     pipeline = [
         {
             "$match": {
-                "manufacture_unit_id" : ObjectId(manufacture_unit_id)
+                "manufacture_unit_id": ObjectId(manufacture_unit_id)
             }
         },
+        # Recursively lookup categories up to 6 levels to generate breadcrumbs
         {
-            "$lookup": {
-                "from": "product_sub_category",  # Collection name
-                "localField": "product_sub_category_id",
-                "foreignField": "_id",
-                "as": "sub_category_info"
+            "$graphLookup": {
+                "from": "product_category",
+                "startWith": "$category_id",
+                "connectFromField": "parent_category_id",
+                "connectToField": "_id",
+                "as": "breadcrumbs",
+                "maxDepth": 5,
+                "depthField": "level"
             }
         },
+        # Lookup brand information
         {
             "$lookup": {
-                "from": "brand",  # Collection name
+                "from": "brand",
                 "localField": "brand_id",
                 "foreignField": "_id",
                 "as": "brand_info"
             }
         },
+        # Lookup vendor information
         {
             "$lookup": {
-                "from": "product_category",  # Collection name
-                "localField": "sub_category_info.product_category_id",
+                "from": "vendor",
+                "localField": "vendor_id",
                 "foreignField": "_id",
-                "as": "category_info"
+                "as": "vendor_info"
             }
         },
+        # Match against search query in various fields
         {
             "$match": {
                 "$or": [
-                    {"name": {"$regex": search_query, "$options": "i"}},
-                    {"description": {"$regex": search_query, "$options": "i"}},
+                    {"product_name": {"$regex": search_query, "$options": "i"}},
+                    {"long_description": {"$regex": search_query, "$options": "i"}},
+                    {"short_description": {"$regex": search_query, "$options": "i"}},
+                    {"features": {"$regex": search_query, "$options": "i"}},
                     {"tags": {"$regex": search_query, "$options": "i"}},
+                    {"attributes": {"$regex": search_query, "$options": "i"}},
                     {"brand_info.name": {"$regex": search_query, "$options": "i"}},
-                    {"sub_category_info.name": {"$regex": search_query, "$options": "i"}},
-                    {"category_info.name": {"$regex": search_query, "$options": "i"}}
+                    {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
+                    {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}}
                 ]
             }
         },
+        # Project fields to include in the result
         {
             "$project": {
                 "_id": {"$toString": "$_id"},  # Convert product _id to string
-                "name": 1,
-                "description": 1,
-                "price": 1,
-                "discount_price": 1,
-                "is_available": 1,
-                "currency": 1,
-                "stock_quantity": 1,
-                "primary_image": 1,
-                "product_image_list": 1,
-                "product_video_list": 1,
-                "colour": 1,
-                "height": 1,
-                "weight": 1,
-                "sku": 1,
-                "rating": 1,
-                "review_count": 1,
-                "warranty_period": 1,
-                "tags": 1,
+                "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", None]},
+                "product_name": {"$ifNull": ["$product_name", None]},
+                "brand_name": {"$ifNull": ["$brand_name", None]},
+                "price": {"$ifNull": ["$list_price", None]},
+                "was_price": {"$ifNull": ["$was_price", None]},
+                "discount": {"$ifNull": ["$discount", None]},
+                "currency": {"$ifNull": ["$currency", None]},
+                "quantity": {"$ifNull": ["$quantity", None]},
+                "availability": {"$ifNull": ["$availability", None]},
+                "return_applicable": {"$ifNull": ["$return_applicable", None]},
+                "images": {"$ifNull": ["$images", []]},
+                "features": {"$ifNull": ["$features", []]},
+                "tags": {"$ifNull": ["$tags", []]},
                 "brand_info": {
-                    "name": {"$arrayElemAt": ["$brand_info.name", 0]},
-                    "_id": {"$toString": {"$arrayElemAt": ["$brand_info._id", 0]}}  # Convert brand _id to string
+                    "name": {"$arrayElemAt": [{"$ifNull": ["$brand_info.name", ["N/A"]]}, 0]},
+                    "logo": {"$arrayElemAt": [{"$ifNull": ["$brand_info.logo", ["N/A"]]}, 0]}
                 },
-                "sub_category_info": {
-                    "name": {"$arrayElemAt": ["$sub_category_info.name", 0]},
-                    "_id": {"$toString": {"$arrayElemAt": ["$sub_category_info._id", 0]}}  # Convert sub-category _id to string
+                "vendor_info": {
+                    "name": {"$arrayElemAt": [{"$ifNull": ["$vendor_info.name", ["N/A"]]}, 0]}
                 },
-                "category_info": {
-                    "name": {"$arrayElemAt": ["$category_info.name", 0]},
-                    "_id": {"$toString": {"$arrayElemAt": ["$category_info._id", 0]}}  # Convert category _id to string
+                # Breadcrumbs, ordering from root to leaf based on category levels
+                "breadcrumbs": {
+                    "$map": {
+                        "input": "$breadcrumbs",
+                        "as": "breadcrumb",
+                        "in": "$$breadcrumb.name"
+                    }
                 }
             }
-        }
+        },
+        # Pagination
+        {"$skip": 0},
+        {"$limit": 10}
     ]
+    
     results = list(product.objects.aggregate(pipeline))
     return results
 
