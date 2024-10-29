@@ -443,7 +443,6 @@ def productSearch(request):
                 "manufacture_unit_id": ObjectId(manufacture_unit_id)
             }
         },
-        # Recursively lookup categories up to 6 levels to generate breadcrumbs
         {
             "$graphLookup": {
                 "from": "product_category",
@@ -455,7 +454,6 @@ def productSearch(request):
                 "depthField": "level"
             }
         },
-        # Lookup brand information
         {
             "$lookup": {
                 "from": "brand",
@@ -464,7 +462,6 @@ def productSearch(request):
                 "as": "brand_info"
             }
         },
-        # Lookup vendor information
         {
             "$lookup": {
                 "from": "vendor",
@@ -473,7 +470,6 @@ def productSearch(request):
                 "as": "vendor_info"
             }
         },
-        # Match against search query in various fields
         {
             "$match": {
                 "$or": [
@@ -489,10 +485,9 @@ def productSearch(request):
                 ]
             }
         },
-        # Project fields to include in the result
         {
             "$project": {
-                "_id": {"$toString": "$_id"},  # Convert product _id to string
+                "_id": {"$toString": "$_id"},
                 "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", None]},
                 "product_name": {"$ifNull": ["$product_name", None]},
                 "brand_name": {"$ifNull": ["$brand_name", None]},
@@ -513,7 +508,6 @@ def productSearch(request):
                 "vendor_info": {
                     "name": {"$arrayElemAt": [{"$ifNull": ["$vendor_info.name", ["N/A"]]}, 0]}
                 },
-                # Breadcrumbs, ordering from root to leaf based on category levels
                 "breadcrumbs": {
                     "$map": {
                         "input": "$breadcrumbs",
@@ -523,7 +517,6 @@ def productSearch(request):
                 }
             }
         },
-        # Pagination
         {"$skip": 0},
         {"$limit": 10}
     ]
