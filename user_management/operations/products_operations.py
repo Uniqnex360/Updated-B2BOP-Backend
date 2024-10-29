@@ -90,12 +90,23 @@ def obtainProductsList(request):
             "$match" : match
         },
         {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "product_category_ins"
+            }
+        },
+        {
            "$project" :{
             "_id":0,
             "id" : {"$toString" : "$_id"},
             "name" : "$product_name",
             "logo" : {"$first":"$images"},
-            "description" : "$long_description"
+            "sku_number" : "$sku_number_product_code_item_number",
+            "brand_name" : 1,
+            "end_level_category" : "$product_category_ins.name",
+            "price" : "$list_price",
            }
         }
     ]
@@ -386,6 +397,8 @@ def save_file(request):
         elif level1_obj != None:
             category_id = level1_obj
 
+
+        DatabaseModel.update_documents(product_category.objects,{"id" : category_id},{"end_level" : True})
 
         # Brand Mapping
         brand_obj = DatabaseModel.get_document(

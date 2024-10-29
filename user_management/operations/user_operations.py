@@ -146,7 +146,7 @@ def obtainRolesForCreatingUser(request):
     # role_name = obtainUserRoleFromToken(request)
     role_name = request.GET.get('role_name')
     if role_name == "admin":
-        match = {"name" : {"$ne" : "role_name"}}
+        match = {"name" : {"$ne" : role_name}}
     elif role_name == "manufacturers/distributors":
         match = {"name" : {"$nin" : ["manufacturers/distributors", 'admin']}}
     pipeline = [

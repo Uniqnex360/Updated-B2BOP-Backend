@@ -120,6 +120,7 @@ class product_category(Document):
     creation_date = fields.DateTimeField(default=datetime.now())
     description = fields.StringField()
     code = fields.StringField()
+    end_level = fields.BooleanField(default=False)
 
 class vendor(Document):
     name = fields.StringField(required=True)
