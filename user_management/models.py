@@ -158,6 +158,11 @@ class product(Document):
     vendor_id = fields.ReferenceField(vendor)
     # Reference to the lowest category level (Level 6 in this example)
     category_id = fields.ReferenceField(product_category)
+
+class unit_wise_field_mapping(Document):
+    manufacture_unit_id = fields.ReferenceField(manufacture_unit)
+    attributes = fields.DictField(default={})
+
     
 
 

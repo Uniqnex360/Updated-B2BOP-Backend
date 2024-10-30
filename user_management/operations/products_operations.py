@@ -125,20 +125,20 @@ def obtainProductDetails(request):
            "$project" :{
             "_id":0,
             "id" : {"$toString" : "$_id"},
-            "name" : "$product_name",
+            "product_name" : 1,
             "sku_number_product_code_item_number" : 1,
             "model" : 1,
             "mpn" : 1,
             "upc_ean" : 1,
             "logo" : {"$first":"$images"},
-            "description" : "$long_description",
+            "long_description" : 1,
             "short_description" : 1,
-            "price" : "$list_price",
+            "list_price" : 1,
             "discount" : {"$concat" : [{"$toString" : "$discount"},"%"]},
             "currency" : 1,
             "quantity" : 1,
             "availability" : 1,
-            "product_image_list" : "$images",
+            "images" : 1,
             "attributes" : 1,
             "features" : 1
            
@@ -189,81 +189,80 @@ def upload_file(request):
         xl_dict['vendor_obj'] = dict()
         xl_dict['brand_obj'] = dict()
 
-        if str(type(row_dict[0])) == "<class 'float'>":
-            error_dict['error'].append(f"SKU number/Product Code/Item number Should be present")
-        else:
+        # if str(type(row_dict[0])) == "<class 'float'>":
+        if pd.notnull(row_dict[0]):
             xl_dict['product_obj']['sku_number_product_code_item_number'] = str(row_dict[0])
+        else:
+            error_dict['error'].append(f"SKU number/Product Code/Item number Should be present")
 
-        if str(type(row_dict[1])) != "<class 'float'>":
+        if pd.notnull(row_dict[1]):
             xl_dict['product_obj']['model'] = str(row_dict[1])
 
-        if str(type(row_dict[2])) == "<class 'float'>":
-            error_dict['error'].append(f"MPN Should be present")
-        else:
+        if pd.notnull(row_dict[2]):
             xl_dict['product_obj']['mpn'] = str(row_dict[2])
+        else:
+            error_dict['error'].append(f"MPN Should be present")
 
-        if str(type(row_dict[3])) != "<class 'float'>":
+        if pd.notnull(row_dict[3]):
             xl_dict['product_obj']['upc_ean'] = str(row_dict[3])
 
 
-        if str(type(row_dict[4])) == "<class 'float'>" or str(type(row_dict[5])) == "<class 'float'>":
-            error_dict['error'].append(f"At least a two-level of categorys should be present")
-        else:
+        if pd.notnull(row_dict[4]) or pd.notnull(row_dict[5]):
             xl_dict['category_obj']['level 1'] = str(row_dict[4])
             xl_dict['category_obj']['level 2'] = str(row_dict[5])
+        else:
+           error_dict['error'].append(f"At least a two-level of categorys should be present") 
         
-        if str(type(row_dict[6])) != "<class 'float'>":
+        if pd.notnull(row_dict[6]):
             xl_dict['category_obj']['level 3'] = str(row_dict[6])
         
-        if str(type(row_dict[7])) != "<class 'float'>":
+        if pd.notnull(row_dict[7]):
             xl_dict['category_obj']['level 4'] = str(row_dict[7])
 
-        if str(type(row_dict[8])) != "<class 'float'>":
+        if pd.notnull(row_dict[8]):
             xl_dict['category_obj']['level 5'] = str(row_dict[8])
 
-        if str(type(row_dict[9])) != "<class 'float'>":
+        if pd.notnull(row_dict[9]):
             xl_dict['category_obj']['level 6'] = str(row_dict[9])
 
-        if str(type(row_dict[10])) != "<class 'float'>":
+        if pd.notnull(row_dict[10]):
             xl_dict['product_obj']['breadcrumb'] = str(row_dict[10]) 
 
         
-        if str(type(row_dict[11])) == "<class 'float'>":
-            error_dict['error'].append(f"Brand Name Should be present")
-        else:
+        if pd.notnull(row_dict[11]):
             xl_dict['brand_obj']['name'] = str(row_dict[11])
             xl_dict['product_obj']['brand_name'] = str(row_dict[11])
+        else:
+            error_dict['error'].append(f"Brand Name Should be present")
 
-        if str(type(row_dict[12])) != "<class 'float'>":
+        if pd.notnull(row_dict[12]):
             xl_dict['vendor_obj']['name'] = str(row_dict[12])
 
 
-        if str(type(row_dict[13])) == "<class 'float'>":
-            error_dict['error'].append(f"Product Name Should be present")
-        else:
+        if pd.notnull(row_dict[13]):
             xl_dict['product_obj']['product_name'] = str(row_dict[13])
-
-        if str(type(row_dict[14])) == "<class 'float'>":
-            error_dict['error'].append(f"Long Description Should be present")
         else:
+           error_dict['error'].append(f"Product Name Should be present") 
+
+        if pd.notnull(row_dict[14]):
             xl_dict['product_obj']['long_description'] = str(row_dict[14])
+        else:
+            error_dict['error'].append(f"Long Description Should be present")
 
 
-        if str(type(row_dict[15])) != "<class 'float'>":
+        if pd.notnull(row_dict[15]):
             xl_dict['product_obj']['short_description'] = str(row_dict[15])
 
-        if str(type(row_dict[16])) != "<class 'float'>":
+        if pd.notnull(row_dict[16]):
             xl_dict['product_obj']['features'] = str(row_dict[16]).split(",")
 
-        if str(type(row_dict[17])) == "<class 'float'>":
-            error_dict['error'].append(f"Images Link list Should be present")
-        else:
+        if pd.notnull(row_dict[17]):
             xl_dict['product_obj']['images'] = str(row_dict[17]).split(",")
-
-
-        if str(type(row_dict[18])) == "<class 'float'>" or str(type(row_dict[19])) == "<class 'float'>" or str(type(row_dict[20])) == "<class 'float'>" or str(type(row_dict[21])) == "<class 'float'>":
-            error_dict['error'].append(f"At least a two-level of Attributes should be present")
         else:
+            error_dict['error'].append(f"Images Link list Should be present")
+
+
+        if pd.notnull(row_dict[18]) or pd.notnull(row_dict[19]) or pd.notnull(row_dict[20]) or pd.notnull(row_dict[21]):
             xl_dict['product_obj']['attributes'] = {}
 
             for j in range(18, 38, 2):  # Step by 2 to access "Attribute name" and "Attribute value" pairs
@@ -273,50 +272,52 @@ def upload_file(request):
                 # Check if both attribute name and value are not null
                 if pd.notnull(attribute_name) and pd.notnull(attribute_value):
                     xl_dict['product_obj']['attributes'][attribute_name] = attribute_value
-
-
-        if str(type(row_dict[38])) == "<class 'float'>":
-            error_dict['error'].append(f"MSRP Should be present")
         else:
+            error_dict['error'].append(f"At least a two-level of Attributes should be present")
+
+
+        if pd.notnull(row_dict[38]):
             xl_dict['product_obj']['msrp'] = float(row_dict[38][1:])
             xl_dict['product_obj']['currency'] = row_dict[38][0]
+        else:
+            error_dict['error'].append(f"MSRP Should be present")
 
-        if str(type(row_dict[39])) != "<class 'float'>":
+        if pd.notnull(row_dict[39]):
             xl_dict['product_obj']['was_price'] = float(row_dict[39][1:])
 
-        if str(type(row_dict[40])) == "<class 'float'>":
-            error_dict['error'].append(f"List Price Should be present")
-        else:
+        if pd.notnull(row_dict[40]):
             xl_dict['product_obj']['list_price'] = float(row_dict[40][1:])
+        else:
+            error_dict['error'].append(f"List Price Should be present")
 
-        if str(type(row_dict[41])) != "<class 'float'>":
+        if pd.notnull(row_dict[41]):
             xl_dict['product_obj']['discount'] = float(row_dict[41].replace("%", ""))
 
-        if str(type(row_dict[42])) != "<class 'float'>":
+        if pd.notnull(row_dict[42]):
             xl_dict['product_obj']['quantity_price'] = float(row_dict[42][1:])
 
-        if str(type(row_dict[43])) == "<class 'float'>":
-            error_dict['error'].append(f"Quantity Should be present")
-        else:
+        if pd.notnull(row_dict[43]):
             xl_dict['product_obj']['quantity'] = int(row_dict[43]) 
-
-        if str(type(row_dict[44])) == "<class 'float'>":
-            error_dict['error'].append(f"Availability Should be present")
         else:
+            error_dict['error'].append(f"Quantity Should be present")
+
+        if pd.notnull(row_dict[44]):
             if str(row_dict[44]).lower() == "out of stock":
                 xl_dict['product_obj']['availability'] = False
             else:
                 xl_dict['product_obj']['availability'] = True
-
-        if str(type(row_dict[45])) == "<class 'float'>":
-            error_dict['error'].append(f"Return Applicable or not Should be present")
         else:
+            error_dict['error'].append(f"Availability Should be present")
+
+        if pd.notnull(row_dict[45]):
             if str(row_dict[45]).lower() == "no":
                 xl_dict['product_obj']['return_applicable'] = False
             else:
                 xl_dict['product_obj']['return_applicable'] = True
+        else:
+            error_dict['error'].append(f"Return Applicable or not Should be present")
         
-        if str(type(row_dict[46])) != "<class 'float'>":
+        if pd.notnull(row_dict[46]):
             xl_dict['product_obj']['tags'] = str(row_dict[46]).split(",")
         
         if len(error_dict['error']) > 0:
@@ -538,3 +539,84 @@ def productSearch(request):
     return results
 
 
+def getProductsByTopLevelCategory(request):
+    product_category_id = request.GET.get('product_category_id')
+    pipeline = [
+        # Match the starting Level 1 category
+        {
+            "$match": {
+                "_id": ObjectId(product_category_id)
+            }
+        },
+        # Recursively get all child categories (up to 6 levels)
+        {
+            "$graphLookup": {
+                "from": "product_category",      # Category collection
+                "startWith": "$_id",             # Start with Level 1 category
+                "connectFromField": "_id",       # Connect child categories
+                "connectToField": "parent_category_id",  # Connect parent reference
+                "as": "all_categories",          # Output array of all categories in hierarchy
+                "maxDepth": 5                    # Limit depth to 5 to cover 6 levels
+            }
+        },
+        # Project only the IDs of all subcategories found
+        {
+            "$project": {
+                "category_ids": {
+                    "$map": {
+                        "input": "$all_categories",
+                        "as": "category",
+                        "in": "$$category._id"
+                    }
+                }
+            }
+        },
+        # Unwind to pass each category ID as a separate document in the pipeline
+        {"$unwind": "$category_ids"},
+        
+        # Lookup products where `category_id` matches any of the category IDs found
+        {
+            "$lookup": {
+                "from": "product",               # Product collection
+                "localField": "category_ids",    # Categories from the $graphLookup stage
+                "foreignField": "category_id",   # Product's end-level category field
+                "as": "product_ins"
+            }
+        },
+        # Unwind products to get a flat structure if multiple products per category
+        {"$unwind": "$product_ins"},
+        
+        # Final Project Stage: Selecting necessary fields from product
+        {
+            "$replaceRoot": {"newRoot": "$product_ins"}
+        },
+        {
+           "$project" : {
+               "_id": 0,
+               "id": {"$toString": "$_id"},
+               "name": "$product_name",
+               "logo": {"$first": "$images"},
+               "sku_number": "$sku_number_product_code_item_number",
+               "brand_name": "$brand_name",
+               "price": "$list_price"
+           }
+        }
+    ]
+    
+    # Execute the pipeline
+    results = list(product_category.objects.aggregate(pipeline))
+    return results
+
+
+
+@csrf_exempt
+def updateProduct(request):
+    data = dict()
+    data['is_updated'] = False
+    json_request = JSONParser().parse(request)
+    product_id = json_request['id']
+    product_obj = DatabaseModel.get_document(product.objects,{"id" : product_id},['id'])
+    if product_obj != None:
+        del json_request['id']
+        data['is_updated'] = DatabaseModel.update_documents(product.objects,{"id" : product_id},json_request)
+    return data

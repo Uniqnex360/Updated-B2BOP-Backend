@@ -1,11 +1,11 @@
 from django.urls import path
-from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList
+from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders
 
 
 from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct
 
 
 urlpatterns = [
@@ -19,7 +19,9 @@ urlpatterns = [
     path('obtainManufactureUnitDetails/',obtainManufactureUnitDetails,name="obtainManufactureUnitDetails"),
 
     #Order Details
-    path('obtainOrderList/',obtainOrderList,name="obtainOrderList"),
+    path('obtainOrderList/',obtainOrderList,name="obtainOrderList"), 
+    path('obtainDealerlist/',obtainDealerlist,name="obtainDealerlist"),
+    path('exportOrders/',exportOrders,name="exportOrders"),
 
     #User creation
     path('obtainRolesForCreatingUser/',obtainRolesForCreatingUser,name="obtainRolesForCreatingUser"),
@@ -38,6 +40,9 @@ urlpatterns = [
 
     path('productSearch/',productSearch,name="productSearch"),
     path('obtainProductDetails/',obtainProductDetails,name="obtainProductDetails"),
+    path('getProductsByTopLevelCategory/',getProductsByTopLevelCategory,name="getProductsByTopLevelCategory"),
+    path('updateProduct/',updateProduct,name="updateProduct"),
+
 
     #Upload File
     path('upload_file/',upload_file,name="upload_file"),
