@@ -97,6 +97,7 @@ def obtainProductsList(request):
                 "as": "product_category_ins"
             }
         },
+        {"$unwind" : "$product_category_ins"},
         {
            "$project" :{
             "_id":0,
@@ -619,4 +620,42 @@ def updateProduct(request):
     if product_obj != None:
         del json_request['id']
         data['is_updated'] = DatabaseModel.update_documents(product.objects,{"id" : product_id},json_request)
+    return data
+
+@csrf_exempt
+def updateBulkProduct(request):
+    data = dict()
+    data['is_updated'] = False
+    json_request = JSONParser().parse(request)
+    product_list = json_request['product_list']
+    for i in product_list:
+        DatabaseModel.update_documents(product.objects,{"id" : i['id']},{"list_price" : i['list_price']})
+    return data
+
+
+
+@csrf_exempt
+def getColumnFormExcel(request):
+    data = dict()
+    data['status'] = False
+    if 'file' not in request.FILES:
+        data['error'] = "No file uploaded."
+        return data
+
+    file = request.FILES['file']
+    try:
+        if file.name.endswith('.xlsx'):
+            df = pd.read_excel(file)
+        elif file.name.endswith('.csv') or file.name.endswith('.txt'):
+            df = pd.read_csv(file)
+        else:
+            data['error'] = "Unsupported file format."
+            return data
+    except Exception as e:
+        data['error'] = f"Error reading file: {str(e)}"
+        return data
+    data['status'] = True
+    k=df.columns
+    data['user_columns'] = k
+    data['general_columns'] = ['sku_number_product_code_item_number','model','mpn','upc_ean','breadcrumb','brand_name','product_name','long_description','short_description','features','images','attributes','tags','msrp','currency','was_price','list_price','discount','quantity_price','quantity','availability','return_applicable']
     return data

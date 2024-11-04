@@ -52,7 +52,7 @@ class user(Document):
     password = fields.StringField(required=True)
     age = fields.IntField()
     date_of_birth = fields.StringField()
-    mobile_number = fields.StringField(required=True)
+    mobile_number = fields.StringField()
     active = fields.BooleanField(default=True)
     profile_image = fields.StringField()
     role_id = fields.ReferenceField(role)

@@ -211,6 +211,7 @@ def obtainOrderList(request):
                 }
             }
             pipeline.append(pipeline2)
+    print("pipeline",pipeline,"\n\n\n\n")
     order_list = list(order.objects.aggregate(*(pipeline)))
 
     return order_list

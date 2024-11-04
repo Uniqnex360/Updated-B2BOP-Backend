@@ -2,15 +2,18 @@ from django.urls import path
 from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders
 
 
-from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser
+from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct
 
 
 urlpatterns = [
 
     path('loginUser/',loginUser,name="loginUser"),
+    path('createUser/',createUser,name="createUser"),
+    path('generateUserName/',generateUserName,name="generateUserName"),
+    path('validateEmail/',validateEmail,name="validateEmail"),
 
 
     #Manufacture Unit creation
@@ -42,10 +45,12 @@ urlpatterns = [
     path('obtainProductDetails/',obtainProductDetails,name="obtainProductDetails"),
     path('getProductsByTopLevelCategory/',getProductsByTopLevelCategory,name="getProductsByTopLevelCategory"),
     path('updateProduct/',updateProduct,name="updateProduct"),
+    path('updateBulkProduct/',updateBulkProduct,name="updateBulkProduct"),
 
 
     #Upload File
     path('upload_file/',upload_file,name="upload_file"),
     path('save_file/',save_file,name="save_file"),
+    path('getColumnFormExcel/',getColumnFormExcel,name="getColumnFormExcel"),
 
 ]

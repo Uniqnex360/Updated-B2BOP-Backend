@@ -10,6 +10,10 @@ import jwt
 from bson import ObjectId
 import pandas as pd
 from b2bop_project.crud import DatabaseModel
+from b2bop_project.settings import SENDGRID_API_KEY
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+import random
 
 
 @api_view(('GET', 'POST'))
@@ -119,27 +123,6 @@ def obtainManufactureUnitDetails(request):
         data['manufacture_unit_obj'] = {} 
     return data
 
-@csrf_exempt
-def createORUpdateUser(request):
-    data = dict()
-    json_request = JSONParser().parse(request)
-    # role_name = obtainUserRoleFromToken(request)
-    # manufacture_unit_id = obtainManufactureIdFromToken(request)
-    # if role_name == "admin":
-    manufacture_unit_id = ObjectId(json_request['manufacture_unit_id'])
-        
-    
-    json_request['user_obj']['role_id'] = ObjectId(json_request['user_obj']['role_id'])
-    
-    if json_request['user_id'] != "":
-        DatabaseModel.update_documents(user.objects,{"id" : json_request['user_id']},json_request['user_obj'])
-        data['is_updated'] = True
-    else:
-        json_request['user_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-        DatabaseModel.save_documents(user,json_request['user_obj'])
-        data['is_created'] = True
-    return data
-
 
 
 def obtainRolesForCreatingUser(request):
@@ -214,3 +197,79 @@ def updateUserProfile(request):
     user_obj = DatabaseModel.update_documents(user.objects,{"id" : user_id},json_request['user_obj'])
     if json_request.get('address_obj'):
         user_obj = DatabaseModel.update_documents(address.objects,{"id" : user_id},json_request['user_obj'])
+
+def getUserName(manufacture_unit_name, name):
+    number = random.randint(0, 999)
+    username = f"{manufacture_unit_name[0:4]}{name}{number}"
+    return username
+
+
+def generateUserName(request):
+    data = dict()
+
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    name = request.GET.get('name')
+
+    manufacture_unit_name = DatabaseModel.get_document(manufacture_unit.objects,{"id" : manufacture_unit_id},['name']).name
+
+    username = getUserName(manufacture_unit_name, name)
+    user_obj = DatabaseModel.get_document(user.objects,{"username" : username})
+    while user_obj != None:
+        username = getUserName(manufacture_unit_name, name)
+        user_obj = DatabaseModel.get_document(user.objects,{"username" : username})
+
+    data['username'] = username
+    return data
+
+
+def send_email(to_email, subject, body):
+    message = Mail(
+        from_email='siva@kmdigicommerce.com',
+        to_emails=to_email,
+        subject=subject,
+        plain_text_content=body,
+    )
+    
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print(f"Email sent successfully! Status Code: {response.status_code}")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+@csrf_exempt
+def createUser(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    
+    print("json_request",json_request,"\n\n\n")
+    username = json_request['username']
+    password = json_request['username']
+    manufacture_unit_id = json_request['manufacture_unit_id']
+    # username = "Test 01"
+    # password = "1"
+    # email = "sivanandham.skks@gmail.com"
+    email = json_request['email']
+    DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3c616569d56ed4d4a75b')})
+
+    # Send a welcome email
+    subject = "Your B2B-OP Dealer Account Has Been Created - Start Shopping!"
+    body = f"""
+    Dear {username},
+
+    We are pleased to inform you that your dealer account has been successfully created. You can now log in to shop for products tailored to your needs!
+    
+    *Email:* {email}
+    *Username:* {username}
+    *Password:*  {password}
+    
+    Please ensure that you keep your login credentials confidential. If you have any questions or need assistance, don't hesitate to contact us.
+
+    Best regards,
+    Service Team
+    """
+    
+    send_email(email, subject, body)
+    data['message'] = "User created and email sent!"
+
+    return data
