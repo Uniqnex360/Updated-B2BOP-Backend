@@ -219,6 +219,62 @@ def generateUserName(request):
         user_obj = DatabaseModel.get_document(user.objects,{"username" : username})
 
     data['username'] = username
+    # l =[]
+    # user_list = DatabaseModel.list_documents(product_category.objects,{},["name"])
+    # for i in user_list:
+    #     first_name = i.name
+    #     if first_name not in l:
+    #         l.append(first_name)
+       
+    # data['l'] =l
+   ###########UPDATE order collection "order_id" field###############
+   # Assuming DatabaseModel and order objects are already defined
+
+    # # Fetch the list of orders
+    # order_list = DatabaseModel.list_documents(order.objects,{},['id'])
+
+    # # Initialize the order_id as an integer
+    # order_id = 1
+
+    # # Loop through each order and update its order_id
+    # for i in order_list:
+    #     # Format order_id with leading zeros (e.g., "0001", "0002", etc.)
+    #     formatted_order_id = f"{order_id:04d}"  # This will format the number with leading zeros (4 digits)
+
+    #     # Update the order with the formatted order_id
+    #     DatabaseModel.update_documents(order.objects, {"id": i.id}, {"order_id": formatted_order_id})
+
+    #     # Increment the order_id for the next iteration
+    #     order_id += 1
+
+    ##########UPDATE order collection "shipping_address_id" field###############
+#    # Step 1: Get all addresses from the Address collection
+#     addresses = address.objects()  # Retrieve all address documents
+
+#     #Step 2: If no addresses exist, handle gracefully
+#     if not addresses:
+#         print("No addresses found in the database.")
+#         return
+
+#    # Step 4: Get all orders from the Order collection
+#     orders = DatabaseModel.list_documents(order.objects,{},['id'])  # Retrieve all order documents
+
+#     # Step 5: Update each order's shipping_address_id with the random address ID
+#     for order_ins in orders:
+#         # Update each order's shipping_address_id field
+#         # order.update(set__shipping_address_id=random_address_id)
+#         random_address = random.choice(addresses)  # Choose a random address document
+#         random_address_id = random_address.id  # Get the ObjectId of the randomly chosen address
+#         # delivery_statuss = ["pending", "shipped", "completed", "canceled"]
+#         # fulfilled_statuss = ["fulfilled", "unfulfilled", "partially fulfilled" ]
+#         # payment_statuss = ["Pending", "Paid", "Failed" ]
+#         # delivery_status = random.choice(delivery_statuss)
+#         # fulfilled_status = random.choice(fulfilled_statuss)
+#         # payment_status = random.choice(payment_statuss)
+#         # total_items = random.randint(1, 999)
+#         DatabaseModel.update_documents(order.objects, {"id": order_ins.id}, {"set__shipping_address_id": random_address_id})
+        
+
     return data
 
 
@@ -255,7 +311,7 @@ def createUser(request):
     # Send a welcome email
     subject = "Your B2B-OP Dealer Account Has Been Created - Start Shopping!"
     body = f"""
-    Dear {username},
+    Dear {json_request['name']},
 
     We are pleased to inform you that your dealer account has been successfully created. You can now log in to shop for products tailored to your needs!
     

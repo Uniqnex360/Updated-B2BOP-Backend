@@ -5,7 +5,7 @@ from user_management.operations.order_and_purchase_operations import createOrUpd
 from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer
 
 
 urlpatterns = [
@@ -53,4 +53,7 @@ urlpatterns = [
     path('save_file/',save_file,name="save_file"),
     path('getColumnFormExcel/',getColumnFormExcel,name="getColumnFormExcel"),
 
+
+    #Dealer actions
+    path('obtainProductsListForDealer/',obtainProductsListForDealer,name="obtainProductsListForDealer"),
 ]

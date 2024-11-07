@@ -2,6 +2,7 @@ from django.db import models
 from mongoengine import fields,Document
 from datetime import datetime
 import re
+import random
 from mongoengine.errors import ValidationError
 
 
@@ -45,6 +46,7 @@ class manufacture_unit(Document):
     logo = fields.StringField()
 
 class user(Document):
+    dealer_id = fields.IntField(default=random.randint(100000,999999))
     first_name = fields.StringField()
     last_name = fields.StringField()
     username = fields.StringField(required=True)
@@ -55,9 +57,10 @@ class user(Document):
     mobile_number = fields.StringField()
     active = fields.BooleanField(default=True)
     profile_image = fields.StringField()
+    company_name = fields.StringField()
     role_id = fields.ReferenceField(role)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
-    default_address_id = fields.ListField(fields.ReferenceField(address))
+    default_address_id = fields.ReferenceField(address)
     address_id = fields.ListField(fields.ReferenceField(address))
     bank_details_id = fields.ReferenceField(bank_details)
 
@@ -153,11 +156,14 @@ class product(Document):
     quantity = fields.FloatField()          #Quantity available or minimum purchase quantity
     availability = fields.BooleanField(default=True)      # "in stock", "out of stock", "pre-order"
     return_applicable = fields.BooleanField(default=False)   # Whether returns are allowed or not
+    visible = fields.BooleanField(default=True)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     brand_id = fields.ReferenceField(brand)
     vendor_id = fields.ReferenceField(vendor)
     # Reference to the lowest category level (Level 6 in this example)
     category_id = fields.ReferenceField(product_category)
+    quantity_price = fields.DictField(default={"1-100" : 1,"100-1000" : 2,"1000-10000" : 3})
+
 
 class unit_wise_field_mapping(Document):
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
@@ -177,11 +183,16 @@ class user_cart_item(Document):
     status = fields.StringField(default="pending")
 
 
+
 class order(Document):
+    order_id = fields.StringField()
     customer_id = fields.ReferenceField(user, required=True)
     order_items = fields.ListField(fields.ReferenceField(user_cart_item))
+    total_items = fields.IntField()
     order_date = fields.DateTimeField(default=datetime.now)
-    status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
+    delivery_status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
+    fulfilled_status = fields.StringField(choices=["fulfilled", "unfulfilled", "partially fulfilled" ], default="unfulfilled")
+    payment_status = fields.StringField(choices=["Pending", "Paid", "Failed" ], default="Pending")
     shipping_address_id = fields.ReferenceField(address, required=True)
     amount = fields.FloatField(required=True),             
     currency = fields.StringField(required=True)             

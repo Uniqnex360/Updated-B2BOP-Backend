@@ -7,9 +7,11 @@ from django.middleware import csrf
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.parsers import JSONParser
 import jwt
+import pytz
 from bson import ObjectId
 import pandas as pd
 from b2bop_project.crud import DatabaseModel
+from datetime import datetime, timedelta
 
 
 @csrf_exempt
@@ -125,23 +127,30 @@ def obtainOrderList(request):
     manufacture_unit_id = json_request['manufacture_unit_id']
     search_query = json_request['search_query']
     sort_by = json_request['sort_by']
+    search_by_date = json_request.get('search_by_date')
     
     sort_by_value = json_request['sort_by_value']
-    status = json_request['status']
+    # status = json_request['status']
     dealer_list = json_request.get('dealer_list')
-    if status == "all":
-        match = {
-                "manufacture_unit_id_str" : manufacture_unit_id,
-                # "status" : status
-            }
-    else:
-        match = {
-                "manufacture_unit_id_str" : manufacture_unit_id,
-                "status" : status
-            }
+    delivery_status = json_request['delivery_status']
+    fulfilled_status = json_request['fulfilled_status']
+    payment_status = json_request['payment_status']
+
+    
+    status_match = {}
+    status_match['manufacture_unit_id_str'] = manufacture_unit_id
+    if delivery_status != "all":
+        status_match['delivery_status'] = delivery_status
+    if fulfilled_status != "all":
+        status_match['fulfilled_status'] = fulfilled_status
+    if payment_status != "all":
+        status_match['payment_status'] = payment_status
+
+    print("status_match",status_match,"\n\n\n\n")
+   
     pipeline = [
         {
-            "$match" : match
+            "$match" : status_match
         },
         {
             "$lookup" :{
@@ -167,11 +176,47 @@ def obtainOrderList(request):
             }
         }
         pipeline.append(dealer_search_obj)
-    project_obj ={
+
+    if search_by_date != None and search_by_date != "":
+        search_date = datetime.strptime(search_by_date, "%Y-%m-%d")
+        print("search_date",search_date,type(search_date),"\n\n")
+
+        # Get the system's local timezone dynamically
+        local_timezone = datetime.now().astimezone().tzinfo
+
+        # Localize start and end of the day to the local timezone
+        start_of_day = search_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+        end_of_day = search_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+
+        # Convert to UTC for MongoDB query
+        start_of_day_utc = start_of_day.astimezone(pytz.utc)
+        end_of_day_utc = end_of_day.astimezone(pytz.utc)
+        date_search_obj = {
+            "$match" : {
+                "creation_date":  {
+                                "$gte": start_of_day_utc,
+                                "$lte": end_of_day_utc 
+                                 }
+            }
+        }
+        pipeline.append(date_search_obj)
+    project_obj =[
+        {
+            "$lookup" :{
+                "from" : "address",
+                "localField" : "shipping_address_id",
+                "foreignField" : "_id",
+                "as" : "address_ins"
+            }
+        },
+        {"$unwind" : "$address_ins"},
+        {
            "$project" :{
                 "_id": 0,
                 "_id" : {"$toString" : "$_id"},
+                "order_id" : 1,
                 "dealer_name" : "$user_ins.username",
+                "total_items" : 1,
                 "amount" : {"$concat": [{"$toString": "$amount"},"$currency"]},
                 "shipping_service" : "-",
                 "tracking_code" : "-",
@@ -181,10 +226,19 @@ def obtainOrderList(request):
                         "date": "$creation_date",
                     }
                     },
-                "status" : 1
+                "address" : {
+                    "street" : "$address_ins.street",
+                    "city" : "$address_ins.city",
+                    "state" : "$address_ins.state",
+                    "country" : "$address_ins.country",
+                    "zipCode" : "$address_ins.zipCode"
+                },
+                "delivery_status" : 1,
+                "fulfilled_status" : 1,
+                "payment_status" : 1
            }
-        }
-    pipeline.append(project_obj)
+        }]
+    pipeline.extend(project_obj)
 
     if sort_by != "":
         if sort_by == "amount":
@@ -211,9 +265,8 @@ def obtainOrderList(request):
                 }
             }
             pipeline.append(pipeline2)
-    print("pipeline",pipeline,"\n\n\n\n")
     order_list = list(order.objects.aggregate(*(pipeline)))
-
+    print("order_list",len(order_list))
     return order_list
 
 
@@ -286,10 +339,37 @@ def obtainDealerlist(request):
             }
         },
         {
+            "$lookup" :{
+                "from" : "address",
+                "localField" : "default_address_id",
+                "foreignField" : "_id",
+                "as" : "address_ins"
+            }
+        },
+        {"$unwind" : "$address_ins"},
+        {
            "$project" :{
                 "_id": 0,
                 'id': {"$toString" : "$_id"},
-                "username" : 1
+                "dealer_id" : 1,
+                "username" :  {
+                "$concat": [
+                    "$first_name",
+                    { "$ifNull": ["$last_name", ""] } 
+                ]
+                },
+                "email" : 1,
+                "mobile_number" : 1,
+                "company_name" : 1,
+                "address" : {
+                    "street" : "$address_ins.street",
+                    "city" : "$address_ins.city",
+                    "state" : "$address_ins.state",
+                    "country" : "$address_ins.country",
+                    "zipCode" : "$address_ins.zipCode"
+                },
+                "website" : "www.google.com",
+                "no_of_orders" : "5"
            }
         }
     ]
