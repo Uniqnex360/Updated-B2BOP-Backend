@@ -137,6 +137,7 @@ def obtainProductsList(request):
         }
     ]
     if sort_by != None and sort_by != "":
+        sort_by = "list_price"
         pipeline2 = {
                 "$sort": {
                     sort_by: sort_by_value
@@ -195,7 +196,6 @@ def obtainProductsListForDealer(request):
         }
     ]
     product_list = list(product.objects.aggregate(*(pipeline)))
-    print("product_list",product_list[11]['logo'])
     return product_list
 
 def obtainProductDetails(request):
@@ -525,6 +525,8 @@ def save_file(request):
                 i['product_obj']['vendor_id'] = vendor_obj.id  
             i['product_obj']['category_id'] = category_id
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
+        # else:
+        #     DatabaseModel.update_documents(product.objects,{"id" : products_obj.id},{"images" : i['product_obj']['images']})
     
     data['status'] = True
     return data
@@ -753,7 +755,16 @@ def updateBulkProduct(request):
     json_request = JSONParser().parse(request)
     product_list = json_request['product_list']
     for i in product_list:
-        DatabaseModel.update_documents(product.objects,{"id" : i['id']},{"list_price" : i['list_price'],"visible" : i['visible'],"msrp" : i['msrp'],"was_price" : i['was_price']})
+        product_obj = {}
+        if 'list_price' in i:
+            product_obj['list_price'] = i['list_price']
+        if 'visible' in i:
+            product_obj['visible'] = i['visible']
+        if 'msrp' in i:
+            product_obj['msrp'] = i['msrp']
+        if 'was_price' in i:
+            product_obj['was_price'] = i['was_price']
+        DatabaseModel.update_documents(product.objects,{"id" : i['id']},product_obj)
         data['is_updated'] = True
     return data
 

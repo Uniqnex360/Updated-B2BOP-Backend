@@ -29,15 +29,20 @@ def createOrUpdateUserCartItem(request):
         },
         {
            "$project" :{
-                "_id":1
+                "_id":1,
+                'price' :1,
+                "quantity" : 1
            }
         }
     ]
     user_cart_item_obj = list(user_cart_item.objects.aggregate(*(pipeline)))
     if user_cart_item_obj != []:
+        price = (user_cart_item_obj[0]['quantity'] + json_request['quantity']) * json_request['price']
+        DatabaseModel.update_documents(user_cart_item.objects,{"id" : user_cart_item_obj[0]['_id']},{"inc__quantity" : json_request['quantity'],"price" : price})
         user_cart_item.objects(id = user_cart_item_obj[0]['_id']).update(inc__quantity = json_request['quantity'])
         data['is_updated'] = True
     else:
+        json_request['price'] = json_request['price'] * json_request['quantity']
         user_cart_item(**json_request).save()
         data['is_created'] = True
     return data
@@ -56,7 +61,7 @@ def obtainUserCartItemList(request):
         },
         {
             "$lookup" :{
-                "from" : "products",
+                "from" : "product",
                 "localField" : "product_id",
                 "foreignField" : "_id",
                 "as" : "products_ins"
@@ -67,13 +72,15 @@ def obtainUserCartItemList(request):
            "$project" :{
                 "_id": 0,
                 "id" : {"$toString" : "$_id"},
-                "name" : "$products_ins.name",
-                "description" : "$products_ins.description",
-                "price" : "$products_ins.price",
+                "product_id" : {"$toString" : "$products_ins._id"},
+                "name" : "$products_ins.product_name",
+                "description" : "$products_ins.long_description",
+                "price" : "$products_ins.list_price",
                 "currency" : "$products_ins.currency",
-                "primary_image" : "$products_ins.primary_image",
-                "colour" : "$products_ins.colour",
-                "quantity" : 1
+                "primary_image" : {"$first":"$products_ins.images"},
+                # "colour" : "$products_ins.colour",
+                "quantity" : 1,
+                "total_price" : "$price"
            }
         }
     ]
@@ -98,26 +105,30 @@ def totalCheckOutAmount(request):
     # user_id = obtainUserIdFromToken(request)
     user_id = request.GET.get('user_id')
     pipeline = [
-        {
-            "$match" : {
-                "user_id" : ObjectId(user_id),
-                "status" : "pending"
-            }
-        },
-        {
-           "$group" :{
-                "_id": None,
-                'total_amount': {'$sum': '$price'}
-           }
-        },
-        {
-           "$project" :{
-                "_id": 0,
-                'total_amount': "$total_amount"
-           }
+    {
+        "$match": {
+            "user_id": ObjectId(user_id),
+            "status": "pending"
+        }
+    },
+    {
+        "$group": {
+            "_id": None,
+            'total_amount': {'$sum': '$price'},
+            'cart_count': {'$sum': 1} 
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            'total_amount': "$total_amount",
+            'cart_count': "$cart_count" 
+        }
         }
     ]
+
     user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+
     return user_cart_item_list
 
 @csrf_exempt

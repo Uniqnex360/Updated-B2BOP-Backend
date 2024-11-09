@@ -67,13 +67,12 @@ def loginUser(request):
 def createORUpdateManufactureUnit(request):
     data = dict()
     json_request = JSONParser().parse(request)
-    
-    if json_request['manufacture_unit_id'] != "":
+    if json_request.get('manufacture_unit_id') != None and json_request.get('manufacture_unit_id') != "":
         DatabaseModel.update_documents(manufacture_unit.objects,{"id" : json_request['manufacture_unit_id']},json_request['manufacture_unit_obj'])
         data['is_updated'] = True
         data['manufacture_unit_id'] = json_request['manufacture_unit_id']
     else:
-        manufacture_obj = DatabaseModel.save_documents(user,json_request['manufacture_unit_obj'])
+        manufacture_obj = DatabaseModel.save_documents(manufacture_unit,json_request['manufacture_unit_obj'])
         data['is_created'] = True
         data['manufacture_unit_id'] = str(manufacture_obj.id)
     return data
@@ -112,7 +111,8 @@ def obtainManufactureUnitDetails(request):
                 "id" : {"$toString" : "$_id"},
                 "name" : 1,
                 "description" : 1,
-                "location" : 1
+                "location" : 1,
+                "logo" : 1
         }
         }
     ]
@@ -122,6 +122,72 @@ def obtainManufactureUnitDetails(request):
     else:
         data['manufacture_unit_obj'] = {} 
     return data
+
+
+def obtainUserListForManufactureUnit(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    
+    pipeline = [
+    {
+        "$match": {
+            "manufacture_unit_id": ObjectId(manufacture_unit_id),
+        }
+    },
+    {
+        "$lookup": {
+            "from": "address",
+            "localField": "default_address_id",
+            "foreignField": "_id",
+            "as": "address_ins"
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$address_ins",
+            "preserveNullAndEmptyArrays": True  # Allow documents without an address
+        }
+    },
+    {
+        "$lookup": {
+            "from": "role",
+            "localField": "role_id",
+            "foreignField": "_id",
+            "as": "role_ins"
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$role_ins",
+            "preserveNullAndEmptyArrays": True  # Allow documents without a role (optional if roles can be missing)
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            'id': {"$toString": "$_id"},
+            "username": {
+                "$concat": [
+                    "$first_name",
+                    { "$ifNull": ["$last_name", ""] }
+                ]
+            },
+            "email": 1,
+            "mobile_number": 1,
+            "company_name": 1,
+            "address": {
+                "street": "$address_ins.street",
+                "city": "$address_ins.city",
+                "state": "$address_ins.state",
+                "country": "$address_ins.country",
+                "zipCode": "$address_ins.zipCode"
+            },
+            "role_name": "$role_ins.name"
+        }
+    }
+    ]
+
+    user_list = list(user.objects.aggregate(*(pipeline)))
+    return user_list
 
 
 
@@ -306,7 +372,11 @@ def createUser(request):
     # password = "1"
     # email = "sivanandham.skks@gmail.com"
     email = json_request['email']
-    DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3c616569d56ed4d4a75b')})
+    if json_request['role_name'] == "super_admin":
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3b206569d56ed4d4a759')})
+    elif json_request['role_name'] == "manufacturer_admin":
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3c616569d56ed4d4a75b')})
+
 
     # Send a welcome email
     subject = "Your B2B-OP Dealer Account Has Been Created - Start Shopping!"
