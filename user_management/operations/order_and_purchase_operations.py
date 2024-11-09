@@ -101,6 +101,8 @@ def updateOrDeleteUserCartItem(request):
     return data
 
 
+
+
 def totalCheckOutAmount(request):
     # user_id = obtainUserIdFromToken(request)
     user_id = request.GET.get('user_id')
