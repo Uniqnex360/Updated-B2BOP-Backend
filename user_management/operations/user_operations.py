@@ -95,7 +95,7 @@ def obtainManufactureUnitList(request):
     ]
     manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
     data['manufacture_unit_list'] = manufacture_unit_list 
-    return JsonResponse(data,safe=False)
+    return data
 
 def obtainManufactureUnitDetails(request):
     data = dict()
