@@ -92,15 +92,16 @@ def obtainUserCartItemList(request):
 def updateOrDeleteUserCartItem(request):
     data = dict()
     json_request = JSONParser().parse(request)
-    if json_request['is_delete'] == True:
+    if json_request['empty_cart'] == True:
+        DatabaseModel.delete_documents(user_cart_item.objects,{"user_id" : ObjectId(json_request['user_id'])})
+        data['is_deleted'] = True
+    elif json_request['is_delete'] == True:
         user_cart_item.objects(id = json_request['id']).delete()
         data['is_deleted'] = True
     else:
         user_cart_item.objects(id = json_request['id']).update(inc__quantity = json_request['quantity'])
         data['is_updated'] = True
     return data
-
-
 
 
 def totalCheckOutAmount(request):
