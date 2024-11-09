@@ -96,10 +96,11 @@ def updateOrDeleteUserCartItem(request):
         DatabaseModel.delete_documents(user_cart_item.objects,{"user_id" : ObjectId(json_request['user_id'])})
         data['is_deleted'] = True
     elif json_request['is_delete'] == True:
-        user_cart_item.objects(id = json_request['id']).delete()
+        print("json_request",json_request,"\n\n\n\n")
+        DatabaseModel.delete_documents(user_cart_item.objects,{"id" : ObjectId(json_request['id'])})
         data['is_deleted'] = True
     else:
-        user_cart_item.objects(id = json_request['id']).update(inc__quantity = json_request['quantity'])
+        user_cart_item.objects(id = json_request['id']).update(quantity = json_request['quantity'])
         data['is_updated'] = True
     return data
 
