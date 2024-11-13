@@ -763,7 +763,7 @@ def conformPayment(request):
     body = f"""
     Dear {user_obj.first_name},
 
-    Thank you for submitting your payment for order #[Order Number]. Your payment is currently under review, and we are working to verify it as quickly as possible.
+    Thank you for submitting your payment for order #{order_obj.order_id}. Your payment is currently under review, and we are working to verify it as quickly as possible.
 
     What to Expect Next:
 
