@@ -253,17 +253,6 @@ def createORUpdateUser(request):
     return data
 
 
-
-@csrf_exempt
-def updateUserProfile(request):
-    data = dict()
-    json_request = JSONParser().parse(request)
-    user_id =  json_request.get('user_id')
-
-    user_obj = DatabaseModel.update_documents(user.objects,{"id" : user_id},json_request['user_obj'])
-    if json_request.get('address_obj'):
-        user_obj = DatabaseModel.update_documents(address.objects,{"id" : user_id},json_request['user_obj'])
-
 def getUserName(manufacture_unit_name, name):
     number = random.randint(0, 999)
     username = f"{manufacture_unit_name[0:4]}{name}{number}"
@@ -398,4 +387,157 @@ def createUser(request):
     send_email(email, subject, body)
     data['message'] = "User created and email sent!"
 
+    return data
+
+def getAddressFormat(address_id,is_default):
+    pipeline = [
+            {
+                "$match" : {"_id" : address_id}
+            },
+            {
+                "$limit" : 1
+            },
+            {
+            "$project" :{
+                    "_id": 0,
+                    "address_id" : {"$toString" : "$_id"},
+                    "street" : 1,
+                    "city" : 1,
+                    "state" : 1,
+                    "zipCode" : 1,
+                    "country" : 1
+            }
+            }
+            ]
+    address_obj = list(address.objects.aggregate(*(pipeline)))
+    if address_obj != []:
+        if is_default == True:
+            address_obj[0]['is_default'] = True
+        else:
+            address_obj[0]['is_default'] = False
+    return address_obj[0] 
+
+
+def obtainUserDetailsForProfile(request):
+    data = dict()
+    user_id = request.GET.get('user_id')
+    pipeline = [
+    {"$match": {"_id": ObjectId(user_id)}},  
+     {
+        "$lookup": {
+            "from": "bank_details",  
+            "localField": "bank_details_id",
+            "foreignField": "_id", 
+            "as": "bank_details_ins" 
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$bank_details_ins", 
+            "preserveNullAndEmptyArrays": True
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "first_name" : {"$ifNull": ["$first_name", ""]},
+            "last_name" : {"$ifNull": ["$last_name", ""]},
+            "email": {"$ifNull": ["$email", ""]}, 
+            "mobile_number": {"$ifNull": ["$mobile_number", ""]},
+            "age" : {"$ifNull": ["$age", ""]},
+            "date_of_birth" : {"$ifNull": ["$date_of_birth", ""]},
+            "profile_image" : {"$ifNull": ["$profile_image", ""]},
+            "company_name" : {"$ifNull": ["$company_name", ""]},
+            "default_address_id" : {"$ifNull": ["$default_address_id", None]},
+            "address_id_list" : {"$ifNull": ["$address_id_list", []]},
+            "bank_details": {
+                "ifsc_code": {"$ifNull": ["$bank_details_ins.ifsc_code", ""]},
+                "iban": {"$ifNull": ["$bank_details_ins.iban", ""]},
+                "swift_code": {"$ifNull": ["$bank_details_ins.swift_code", ""]},
+                "bank_name": {"$ifNull": ["$bank_details_ins.bank_name", ""]},
+                "account_number": {"$ifNull": ["$bank_details_ins.account_number", ""]},
+                "branch": {"$ifNull": ["$bank_details_ins.branch", ""]},
+                "currency": {"$ifNull": ["$bank_details_ins.currency", ""]},
+                "images": {"$ifNull": ["$bank_details_ins.images", []]}
+            }
+        }
+        }
+    
+    ]
+    user_obj = list(user.objects.aggregate(*pipeline))
+    address_obj_list = []
+    if user_obj != []:
+        if user_obj[0]['default_address_id'] != None:
+            default_add = getAddressFormat(user_obj[0]['default_address_id'],True)
+            address_obj_list.append(default_add)
+        if user_obj[0]['address_id_list'] != []:
+            for i in user_obj[0]['address_id_list']:
+               other_add = getAddressFormat(i,False)
+               address_obj_list.append(other_add)
+        
+        user_obj[0]['address_obj_list'] = address_obj_list
+        del user_obj[0]['address_id_list']
+        del user_obj[0]['default_address_id']
+                
+
+        data['user_obj'] = user_obj[0]
+    else:
+        data['user_obj'] = {}
+    return data
+
+def createOrUpdate(address_obj):
+    if address_obj.get('id') != None:
+        address_id = ObjectId(address_obj['id'])
+        del address_obj['id']
+        del address_obj['is_default']
+        DatabaseModel.update_documents(address.objects,{"id" : address_id},address_obj)
+    else:
+        del address_obj['is_default']
+        new_address_obj = DatabaseModel.save_documents(address,address_obj)
+        address_id = new_address_obj.id
+
+    return address_id
+
+
+@csrf_exempt
+def updateUserProfile(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    print("USer DETAILS", json_request, "\n\n\n")
+    user_id =  json_request.get('user_id')
+    user_obj = json_request['user_obj']
+    address_obj_list = json_request['address_obj_list']
+    bank_details_obj = json_request['bank_details_obj']
+
+
+    DatabaseModel.update_documents(user.objects,{"id" : user_id},user_obj)
+    update_obj = dict()
+    if bank_details_obj != {}:
+
+        if bank_details_obj.get('id') != None:
+            bank_id = ObjectId(bank_details_obj['id'])
+            del bank_details_obj['id']
+            DatabaseModel.update_documents(bank_details.objects,{"id" : bank_id},bank_details_obj)
+        else:
+            bank_obj = DatabaseModel.save_documents(bank_details,bank_details_obj)
+            bank_id = bank_obj.id
+        update_obj['bank_details_id'] = bank_id
+    
+
+    address_id_list = []
+    if address_obj_list != []:
+        for address_ins in address_obj_list:
+            if address_ins['is_default'] == True:
+                default_address_id = createOrUpdate(address_ins)
+            else:
+                other_address_id = createOrUpdate(address_ins)
+                address_id_list.append(other_address_id)
+        update_obj['default_address_id'] = default_address_id
+        update_obj['address_id_list'] = address_id_list
+        
+
+    if update_obj != {}:
+        DatabaseModel.update_documents(user.objects,{"id" : user_id},update_obj)
+    data['is_updated'] = "Profile Updated Sucessfully"
     return data
