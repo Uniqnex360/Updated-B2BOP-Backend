@@ -73,6 +73,7 @@ def obtainbrandList(request):
 @csrf_exempt
 def obtainProductsList(request):
     json_request = JSONParser().parse(request)
+    print("json_request_product_list",json_request,"\n\n\n")
     manufacture_unit_id = json_request['manufacture_unit_id']
     sort_by = json_request.get('sort_by')
     sort_by_value = json_request.get('sort_by_value')
@@ -82,26 +83,10 @@ def obtainProductsList(request):
     match = {}
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
 
-    if product_category_id != None:
+    if product_category_id != None and product_category_id != "":
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all":
         match['availability'] = True if filters == "true" else False
-    
-    
-    
-    
-    # # brand_id = request.GET.get('brand_id')
-    # # manufacture_unit_id = obtainManufactureIdFromToken(request)
-    # manufacture_unit_id = request.GET.get('manufacture_unit_id')
-    # filters = request.GET.get('filters')
-
-    # match = {}
-    # match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-
-    # if product_category_id != None:
-    #     match['category_id'] = ObjectId(product_category_id)
-    # if filters != None and filters != "all":
-    #     match['availability'] = True if filters == "true" else False
 
 
     pipeline =[
@@ -191,7 +176,8 @@ def obtainProductsListForDealer(request):
             "price" : "$list_price",
             "currency" : 1,
             "availability" : 1,
-            "discount" : 1
+            "discount" : 1,
+            "quantity" : 1
            }
         }
     ]

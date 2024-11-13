@@ -30,6 +30,7 @@ class bank_details(Document):
     account_number = fields.StringField()
     branch = fields.StringField()
     currency = fields.StringField()
+    images = fields.ListField(fields.StringField(),default=[])
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     address_id = fields.ReferenceField(address)
@@ -61,7 +62,7 @@ class user(Document):
     role_id = fields.ReferenceField(role)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     default_address_id = fields.ReferenceField(address)
-    address_id = fields.ListField(fields.ReferenceField(address))
+    address_id_list = fields.ListField(fields.ReferenceField(address),default=[])
     bank_details_id = fields.ReferenceField(bank_details)
 
 
@@ -180,7 +181,7 @@ class user_cart_item(Document):
     price = fields.FloatField(required=True)    
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
-    status = fields.StringField(default="pending")
+    status = fields.StringField(choices=["pending", "completed"], default="pending")
 
 
 
@@ -192,9 +193,9 @@ class order(Document):
     order_date = fields.DateTimeField(default=datetime.now)
     delivery_status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
     fulfilled_status = fields.StringField(choices=["fulfilled", "unfulfilled", "partially fulfilled" ], default="unfulfilled")
-    payment_status = fields.StringField(choices=["Pending", "Paid", "Failed" ], default="Pending")
-    shipping_address_id = fields.ReferenceField(address, required=True)
-    amount = fields.FloatField(required=True),             
+    payment_status = fields.StringField(choices=["completed","Pending", "Paid", "Failed" ], default="Pending")
+    shipping_address_id = fields.ReferenceField(address)
+    amount = fields.FloatField(required=True)
     currency = fields.StringField(required=True)             
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
@@ -207,8 +208,11 @@ class transaction(Document):
     total_amount = fields.FloatField(required=True) 
     currency = fields.StringField(required=True) 
     transaction_date = fields.DateTimeField(default=datetime.now)
-    payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"], required=True)
-    status = fields.StringField(choices=["successful", "failed", "pending"], default="pending") 
+    payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"])
+    status = fields.StringField(choices=["completed","paid", "failed", "pending"], default="pending") 
+    payment_proof = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     bank_details_id = fields.ReferenceField(bank_details)
+    message = fields.StringField()
+    transaction_id = fields.StringField()
