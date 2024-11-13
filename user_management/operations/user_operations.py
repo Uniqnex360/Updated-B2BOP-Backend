@@ -335,7 +335,7 @@ def generateUserName(request):
 
 def send_email(to_email, subject, body):
     message = Mail(
-        from_email='siva@kmdigicommerce.com',
+        from_email='contactdigicommerce@gmail.com',
         to_emails=to_email,
         subject=subject,
         plain_text_content=body,
