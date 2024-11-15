@@ -34,6 +34,7 @@ class bank_details(Document):
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     address_id = fields.ReferenceField(address)
+    is_default = fields.BooleanField(default=False)
 
 class role(Document):
     name = fields.StringField()
@@ -130,6 +131,8 @@ class vendor(Document):
     name = fields.StringField(required=True)
     manufacture_unit_id_str = fields.StringField()
 
+
+
 class product(Document):
     sku_number_product_code_item_number = fields.StringField(required=True)
     # product_code = fields.StringField(required=True)
@@ -157,6 +160,7 @@ class product(Document):
     quantity = fields.FloatField()          #Quantity available or minimum purchase quantity
     availability = fields.BooleanField(default=True)      # "in stock", "out of stock", "pre-order"
     return_applicable = fields.BooleanField(default=False)   # Whether returns are allowed or not
+    return_in_days = fields.StringField()
     visible = fields.BooleanField(default=True)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     brand_id = fields.ReferenceField(brand)
@@ -164,13 +168,21 @@ class product(Document):
     # Reference to the lowest category level (Level 6 in this example)
     category_id = fields.ReferenceField(product_category)
     quantity_price = fields.DictField(default={"1-100" : 1,"100-1000" : 2,"1000-10000" : 3})
+    rating_count = fields.IntField(default=0)
+    rating_average = fields.FloatField(default=0.0)
+    from_the_manufacture = fields.StringField()
 
 
 class unit_wise_field_mapping(Document):
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     attributes = fields.DictField(default={})
 
-    
+
+class rating(Document):
+    user_id = fields.ReferenceField(user)
+    product_id = fields.ReferenceField(product)    
+    feedback = fields.StringField(default="")
+    rating_count = fields.FloatField()
 
 
 
@@ -193,7 +205,7 @@ class order(Document):
     order_date = fields.DateTimeField(default=datetime.now)
     delivery_status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
     fulfilled_status = fields.StringField(choices=["fulfilled", "unfulfilled", "partially fulfilled" ], default="unfulfilled")
-    payment_status = fields.StringField(choices=["completed","Pending", "Paid", "Failed" ], default="Pending")
+    payment_status = fields.StringField(choices=["Completed","Pending", "Paid", "Failed" ], default="Pending")
     shipping_address_id = fields.ReferenceField(address)
     amount = fields.FloatField(required=True)
     currency = fields.StringField(required=True)             
@@ -208,7 +220,7 @@ class transaction(Document):
     total_amount = fields.FloatField(required=True) 
     currency = fields.StringField(required=True) 
     transaction_date = fields.DateTimeField(default=datetime.now)
-    payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"])
+    payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"], default="bank_transfer")
     status = fields.StringField(choices=["completed","paid", "failed", "pending"], default="pending") 
     payment_proof = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
@@ -216,3 +228,11 @@ class transaction(Document):
     bank_details_id = fields.ReferenceField(bank_details)
     message = fields.StringField()
     transaction_id = fields.StringField()
+
+
+class mail_template(Document):
+    code = fields.StringField()
+    subject = fields.StringField()
+    default_template = fields.StringField()
+    cutomize_template = fields.StringField()
+    manufacture_unit_id_str = fields.StringField()

@@ -40,7 +40,6 @@ def createOrUpdateUserCartItem(request):
     if user_cart_item_obj != []:
         price = (user_cart_item_obj[0]['quantity'] + json_request['quantity']) * json_request['price']
         DatabaseModel.update_documents(user_cart_item.objects,{"id" : user_cart_item_obj[0]['_id']},{"inc__quantity" : json_request['quantity'],"price" : price})
-        user_cart_item.objects(id = user_cart_item_obj[0]['_id']).update(quantity = json_request['quantity'])
         data['is_updated'] = True
     else:
         json_request['price'] = json_request['price'] * json_request['quantity']
@@ -79,6 +78,9 @@ def obtainUserCartItemList(request):
                 "price" : "$products_ins.list_price",
                 "currency" : "$products_ins.currency",
                 "primary_image" : {"$first":"$products_ins.images"},
+                "sku_number" : "$products_ins.sku_number_product_code_item_number",
+                "mpn_number" : "$products_ins.mpn",
+                "brand_name" : "$products_ins.brand_name",
                 # "colour" : "$products_ins.colour",
                 "quantity" : 1,
                 "total_price" : "$price"
@@ -95,7 +97,7 @@ def updateOrDeleteUserCartItem(request):
     data = dict()
     json_request = JSONParser().parse(request)
     if json_request['empty_cart'] == True:
-        DatabaseModel.delete_documents(user_cart_item.objects,{"user_id" : ObjectId(json_request['user_id'])})
+        DatabaseModel.delete_documents(user_cart_item.objects,{"user_id" : ObjectId(json_request['user_id']),"status" : "pending"})
         data['is_deleted'] = True
     elif json_request['is_delete'] == True:
         DatabaseModel.delete_documents(user_cart_item.objects,{"id" : ObjectId(json_request['id'])})
@@ -152,7 +154,6 @@ def totalCheckOutAmount(request):
 @csrf_exempt
 def obtainOrderList(request):
     json_request = JSONParser().parse(request)
-    print("json_request",json_request,"\n\n\n")
     manufacture_unit_id = json_request['manufacture_unit_id']
     search_query = json_request['search_query']
     sort_by = json_request['sort_by']
@@ -299,6 +300,14 @@ def obtainOrderList(request):
                 }
             }
             pipeline.append(pipeline2)
+    else:
+        pipeline2 = {
+                "$sort": {
+                    "_id": -1
+                }
+            }
+        pipeline.append(pipeline2)
+
     order_list = list(order.objects.aggregate(*(pipeline)))
     # print("order_list",len(order_list))
     return order_list
@@ -421,13 +430,33 @@ def createOrder(request):
     data = dict()
     json_request = JSONParser().parse(request)
 
-    # print("json_request-------------",json_request,"\n\n\n")
     manufacture_unit_id_str = json_request['manufacture_unit_id']
     customer_id = json_request['user_id']
     order_items = json_request['order_items']
     amount = json_request['amount']
     currency = json_request['currency']
     shipping_address_id = json_request['shipping_address_id']
+
+    pipeline = [
+        {
+            "$match" : {
+                "_id" : ObjectId(shipping_address_id),
+            }
+        }, 
+        {
+           "$project" :{
+                "_id": 0,
+                "street" : 1,
+                "city" : 1,
+                "state" : 1,
+                "zipCode" : 1,
+                "country" : 1
+           }
+        }
+    ]
+    address_obj = list(address.objects.aggregate(*(pipeline)))
+    shipping_address_obj = DatabaseModel.save_documents(address,address_obj[0])
+
     pipeline = [
         {
             "$match" : {
@@ -451,9 +480,9 @@ def createOrder(request):
 
     formatted_order_id = f"{order_id:04d}"
     order_items = [ObjectId(ins) for ins in order_items]
-    order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : order_items,"total_items" : len(order_items), "shipping_address_id" : ObjectId(shipping_address_id)})
+    order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : order_items,"total_items" : len(order_items), "shipping_address_id" : shipping_address_obj.id})
 
-    DatabaseModel.update_documents(user_cart_item.objects,{"id__in" : order_items},{"status" : "completed"})
+    DatabaseModel.update_documents(user_cart_item.objects,{"id__in" : order_items},{"status" : "completed","updated_date" : datetime.now()})
     pipeline = [
         {
             "$match" : {
@@ -741,7 +770,7 @@ def conformPayment(request):
 
 
     order_obj = DatabaseModel.get_document(order.objects,{"id" : order_id},["id",'amount', 'currency','order_id'])
-    DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : "paid"})
+    DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : "Paid","updated_date" : datetime.now()})
 
     total_amount = order_obj.amount
     currency = order_obj.currency
@@ -758,22 +787,27 @@ def conformPayment(request):
 
     user_obj = DatabaseModel.get_document(user.objects,{"id" : user_id},['first_name',"last_name",'email','manufacture_unit_id'])
 
-    # Send a welcome email
-    subject = "Payment Received - Under Review"
-    body = f"""
-    Dear {user_obj.first_name},
+    # # Send a welcome email
+    # subject = "Payment Received - Under Review"
+    # body = f"""
+    # Dear {user_obj.first_name},
 
-    Thank you for submitting your payment for order #{order_obj.order_id}. Your payment is currently under review, and we are working to verify it as quickly as possible.
+    # Thank you for submitting your payment for order #{order_obj.order_id}. Your payment is currently under review, and we are working to verify it as quickly as possible.
 
-    What to Expect Next:
+    # What to Expect Next:
 
-    Once the payment is successfully verified, you will receive a confirmation email from us with your order summary, payment confirmation, and shipping information.
-    We aim to complete this verification process within [estimated time frame, e.g., 1-2 business days].
-    Thank you for your patience and trust in us. If you have any questions or need further assistance, please feel free to reply to this email.
+    # Once the payment is successfully verified, you will receive a confirmation email from us with your order summary, payment confirmation, and shipping information.
+    # We aim to complete this verification process within [estimated time frame, e.g., 1-2 business days].
+    # Thank you for your patience and trust in us. If you have any questions or need further assistance, please feel free to reply to this email.
 
-    Best regards,
-    Service Team
-    """
+    # Best regards,
+    # Service Team
+    # """
+    payment_under_review_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_under_review_template"})
+
+    subject = payment_under_review_template_obj.subject
+
+    body = payment_under_review_template_obj.default_template.format(name=user_obj.first_name, order_id=order_obj.order_id)
     
     send_email(user_obj.email, subject, body)
 
@@ -781,32 +815,318 @@ def conformPayment(request):
 
     current_time = getLocalTime(datetime.now())
 
-    subject = f"New Payment Confirmation Submitted for Order #{order_obj.order_id}"
+    payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_notification"})
 
-    body = f"""
-    Hello {admin_obj.first_name},
+    subject = payment_confirmation_obj.subject.format(order_id=order_obj.order_id)
 
-    A new payment confirmation has been submitted by a customer for review.
+    # body = f"""
+    # Hello {admin_obj.first_name},
 
-    Order Details:
+    # A new payment confirmation has been submitted by a customer for review.
 
-    Order Number: #{order_obj.order_id}
-    Customer Name: {user_obj.first_name}
-    Transaction ID: {transaction_id}
-    Payment Amount: {total_amount}
-    Submission Date: {current_time} UTC
-    Next Steps: Please review the payment confirmation and verify its authenticity. Once confirmed, notify the customer by sending a payment confirmation and order summary.
+    # Order Details:
 
-    If any issues arise during verification, please contact the customer promptly to resolve.
+    # Order Number: #{order_obj.order_id}
+    # Customer Name: {user_obj.first_name}
+    # Transaction ID: {transaction_id}
+    # Payment Amount: {total_amount}
+    # Submission Date: {current_time} UTC
+    # Next Steps: Please review the payment confirmation and verify its authenticity. Once confirmed, notify the customer by sending a payment confirmation and order summary.
 
-    Thank you for your attention to this order.
+    # If any issues arise during verification, please contact the customer promptly to resolve.
 
-    Best regards,
-    Service Team
-    """
-    
+    # Thank you for your attention to this order.
+
+    # Best regards,
+    # Service Team
+    # """
+    body = payment_confirmation_obj.default_template.format(name=admin_obj.first_name,order_id=order_obj.order_id, first_name=user_obj.first_name, transaction_id = transaction_id, total_amount= total_amount, current_time = current_time)
     send_email(admin_obj.email, subject, body)
 
     
     data['is_saved'] = "Transaction saved SucessFully"
+    return data
+
+
+def getorderDetails(request):
+    data = dict()
+    order_id = request.GET.get('order_id')
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline = [
+    {"$match": {"_id": ObjectId(order_id)}},  
+    {
+        "$lookup": {
+            "from": "user",  
+            "localField": "customer_id",  
+            "foreignField": "_id",  
+            "as": "user_ins"  
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$user_ins",
+        }
+    },
+    {
+        "$lookup": {
+            "from": "address",  
+            "localField": "shipping_address_id",
+            "foreignField": "_id", 
+            "as": "shipping_address_ins" 
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$shipping_address_ins", 
+            "preserveNullAndEmptyArrays": True
+        }
+    },
+    {
+        "$lookup": {
+            "from": "transaction",  
+            "localField": "_id",
+            "foreignField": "order_id", 
+            "as": "transaction_ins" 
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$transaction_ins", 
+            "preserveNullAndEmptyArrays": True
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            "id" : {"$toString" : "$_id"},
+            "order_id" : 1,
+            "payment_status" : 1,
+            "delivery_status" : 1,
+            "fulfilled_status" : 1,
+            "placed_on": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$creation_date",
+                    }
+                    },
+            "updated": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$updated_date",
+                    }
+                    },
+            "paid_on": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$transaction_ins.transaction_date",
+                    }
+                    },
+            "total_amount" : "$amount",
+            "currency" : 1,
+            "order_items" : 1,
+            "total_items" : 1,
+
+            "billing_address": {
+                "_id" : {"$toString" : "$shipping_address_ins._id"},
+                "street": "$shipping_address_ins.street",
+                "city": "$shipping_address_ins.city",
+                "state": "$shipping_address_ins.state",
+                "country": "$shipping_address_ins.country",
+                "zipCode": "$shipping_address_ins.zipCode"
+            },
+            "name": {
+                "$concat": [
+                    "$user_ins.first_name",  
+                    {"$ifNull": ["$user_ins.last_name", ""]}  
+                ]
+            },
+            "email": "$user_ins.email",
+            "mobile_number": {"$ifNull": ["$user_ins.mobile_number",""]},
+        }
+        }
+    
+    ]
+    order_obj = list(order.objects.aggregate(*pipeline))
+
+    pipeline = [
+    {"$match": {"manufacture_unit_id": ObjectId(manufacture_unit_id)}},  
+    {
+        "$lookup": {
+            "from": "role",  
+            "localField": "role_id",  
+            "foreignField": "_id",  
+            "as": "role_ins"  
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$role_ins",
+        }
+    },
+    {
+        "$match" : {
+            "role_ins.name" : "manufacturer_admin"
+        }
+    },
+    {
+        "$lookup": {
+            "from": "address",  
+            "localField": "default_address_id",
+            "foreignField": "_id", 
+            "as": "shipping_address_ins" 
+        }
+    },
+    {
+        "$unwind": {
+            "path": "$shipping_address_ins", 
+            "preserveNullAndEmptyArrays": True
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            "shipping_address": {
+                "_id" : {"$toString" : "$shipping_address_ins._id"},
+                "street": "$shipping_address_ins.street",
+                "city": "$shipping_address_ins.city",
+                "state": "$shipping_address_ins.state",
+                "country": "$shipping_address_ins.country",
+                "zipCode": "$shipping_address_ins.zipCode"
+            },
+        }
+        }
+    
+    ]
+    billing_address_obj = list(user.objects.aggregate(*pipeline))
+    if billing_address_obj != []:
+        order_obj[0]['shipping_address'] = billing_address_obj[0]
+    else:
+        order_obj[0]['shipping_address'] = {}
+    pipeline =[
+        {
+            "$match" : {
+                "_id" : {"$in" : order_obj[0]['order_items']}
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "product",
+                "localField" : "product_id",
+                "foreignField" : "_id",
+                "as" : "products_ins"
+            }
+        },
+        {"$unwind" : "$products_ins"},
+        {
+        "$project" :{
+                "_id": 0,
+                "product_name" : "$products_ins.product_name",
+                "primary_image" : {"$first":"$products_ins.images"},
+                "sku_number" : "$products_ins.sku_number_product_code_item_number",
+                "mpn_number" : "$products_ins.mpn",
+                "brand_name" : "$products_ins.brand_name",
+                "price" : "$products_ins.list_price",
+                "currency" : "$products_ins.currency",
+                "quantity" : 1,
+                "total_price" : "$price"
+        }
+        }
+    ]
+    user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+    order_obj[0]['product_list'] = user_cart_item_list
+
+    del order_obj[0]['order_items']
+
+    data['order_obj'] = order_obj[0]
+    return data
+
+
+
+def AcceptOrRejectOrder(request):
+    data = dict()
+    order_id = request.GET.get('order_id')
+    user_id = request.GET.get('user_id')
+    status = request.GET.get('status').lower()
+
+
+    pipeline =[
+        {
+            "$match" : {
+                "_id" : ObjectId(user_id)
+            }
+        },
+        {
+        "$project" :{
+                "_id": 0,
+                "name" : {
+                "$concat": [
+                    "$first_name",
+                    { "$ifNull": ["$last_name", ""] } 
+                ]
+                },
+                "email" : "$user_ins.email",
+                "company_name" : {"$ifNull" : ['$company_name',""]},
+                "mobile_number" : {"$ifNull" : ['$mobile_number',""]}
+                
+
+        }
+        }
+    ]
+    admin_user_obj = list(order.objects.aggregate(*(pipeline)))
+
+    pipeline =[
+        {
+            "$match" : {
+                "_id" : ObjectId(order_id)
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "user",
+                "localField" : "customer_id",
+                "foreignField" : "_id",
+                "as" : "user_ins"
+            }
+        },
+        {"$unwind" : "$user_ins"},
+        {
+        "$project" :{
+                "_id": 0,
+                "order_id" : "$order_id",
+                "name" : {
+                "$concat": [
+                    "$first_name",
+                    { "$ifNull": ["$last_name", ""] } 
+                ]
+                },
+                "email" : "$user_ins.email",
+                "amount" : {"$concat":["$currency","$amount"]}
+        }
+        }
+    ]
+    order_user_obj = list(order.objects.aggregate(*(pipeline)))
+    if status == "accept":
+        payment_status = "Completed"
+
+        payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_confirmation"})
+
+        subject = payment_confirmation_obj.subject.format(order_id=order_user_obj[0]['order_id'])
+
+        body = payment_confirmation_obj.default_template.format(dealer_name=order_user_obj[0]['name'],amount=order_user_obj[0]['amount'],date=getLocalTime(datetime.now()),your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
+        
+    else:
+        payment_status = "Failed"
+
+        payment_rejection_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_confirmation"})
+
+        subject = payment_rejection_obj.subject.format(order_id=order_user_obj[0]['order_id'])
+
+        body = payment_rejection_obj.default_template.format(dealer_name=order_user_obj[0]['name'],your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
+
+    send_email(order_user_obj[0]['email'], subject, body)
+
+
+    
+    DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : payment_status,"updated_date" : datetime.now()})
+    data['is_action'] = "Mail sended SuccessFully"
     return data

@@ -1,12 +1,12 @@
 from django.urls import path
-from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment
+from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, AcceptOrRejectOrder
 
 
 
-from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile
+from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer
 
 
 urlpatterns = [
@@ -17,6 +17,8 @@ urlpatterns = [
     path('validateEmail/',validateEmail,name="validateEmail"),
     path('obtainUserDetailsForProfile/',obtainUserDetailsForProfile,name="obtainUserDetailsForProfile"),
     path('updateUserProfile/',updateUserProfile,name="updateUserProfile"),
+    path('obtainAllMailTemplateForManufactureUnit/',obtainAllMailTemplateForManufactureUnit,name="obtainAllMailTemplateForManufactureUnit"),
+    path('updateMailTemplate/',updateMailTemplate,name="updateMailTemplate"),
 
 
     #Manufacture Unit creation
@@ -33,6 +35,8 @@ urlpatterns = [
     path('obtainOrderListForDealer/',obtainOrderListForDealer,name="obtainOrderListForDealer"),
     path('getManufactureBankDetails/',getManufactureBankDetails,name="getManufactureBankDetails"),
     path('conformPayment/',conformPayment,name="conformPayment"),
+    path('getorderDetails/',getorderDetails,name="getorderDetails"),
+    path('AcceptOrRejectOrder/',AcceptOrRejectOrder,name="AcceptOrRejectOrder"),
 
 
 
@@ -57,6 +61,7 @@ urlpatterns = [
     path('getProductsByTopLevelCategory/',getProductsByTopLevelCategory,name="getProductsByTopLevelCategory"),
     path('updateProduct/',updateProduct,name="updateProduct"),
     path('updateBulkProduct/',updateBulkProduct,name="updateBulkProduct"),
+    path('productCountForDealer/',productCountForDealer,name="productCountForDealer"),
 
 
     #Upload File

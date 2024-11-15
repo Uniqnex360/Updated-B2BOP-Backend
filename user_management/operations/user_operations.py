@@ -353,7 +353,6 @@ def createUser(request):
     data = dict()
     json_request = JSONParser().parse(request)
     
-    print("json_request",json_request,"\n\n\n")
     username = json_request['username']
     password = json_request['username']
     manufacture_unit_id = json_request['manufacture_unit_id']
@@ -367,23 +366,27 @@ def createUser(request):
         DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3c616569d56ed4d4a75b')})
 
 
-    # Send a welcome email
-    subject = "Your B2B-OP Dealer Account Has Been Created - Start Shopping!"
-    body = f"""
-    Dear {json_request['name']},
+    # # Send a welcome email
+    # subject = "Your B2B-OP Dealer Account Has Been Created - Start Shopping!"
+    # body = f"""
+    # Dear {json_request['name']},
 
-    We are pleased to inform you that your dealer account has been successfully created. You can now log in to shop for products tailored to your needs!
+    # We are pleased to inform you that your dealer account has been successfully created. You can now log in to shop for products tailored to your needs!
     
-    *Email:* {email}
-    *Username:* {username}
-    *Password:*  {password}
+    # *Email:* {email}
+    # *Username:* {username}
+    # *Password:*  {password}
     
-    Please ensure that you keep your login credentials confidential. If you have any questions or need assistance, don't hesitate to contact us.
+    # Please ensure that you keep your login credentials confidential. If you have any questions or need assistance, don't hesitate to contact us.
 
-    Best regards,
-    Service Team
-    """
-    
+    # Best regards,
+    # Service Team
+    # """
+    user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation"})
+
+    subject = user_creation_template_obj.subject
+
+    body = user_creation_template_obj.default_template.format(name = json_request['name'], email=email, username = username, password = password)
     send_email(email, subject, body)
     data['message'] = "User created and email sent!"
 
@@ -504,7 +507,6 @@ def createOrUpdate(address_obj):
 def updateUserProfile(request):
     data = dict()
     json_request = JSONParser().parse(request)
-    print("USer DETAILS", json_request, "\n\n\n")
     user_id =  json_request.get('user_id')
     user_obj = json_request['user_obj']
     address_obj_list = json_request['address_obj_list']
@@ -540,4 +542,33 @@ def updateUserProfile(request):
     if update_obj != {}:
         DatabaseModel.update_documents(user.objects,{"id" : user_id},update_obj)
     data['is_updated'] = "Profile Updated Sucessfully"
+    return data
+
+
+def obtainAllMailTemplateForManufactureUnit(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline = [
+    {"$match": {"manufacture_unit_id_str": manufacture_unit_id}},  
+    {
+        "$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "code" : 1,
+            "subject" : 1,
+            "default_template": 1, 
+        }
+        }
+    
+    ]
+    mail_template_list = list(mail_template.objects.aggregate(*pipeline))
+    return mail_template_list
+
+@csrf_exempt
+def updateMailTemplate(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    id = json_request['update_obj']['id']
+    del json_request['update_obj']['id']
+    DatabaseModel.update_documents(mail_template.objects,{"id" : id},json_request['update_obj'])
+    data["is_updated"] = "Mail Template update sucessfully"
     return data
