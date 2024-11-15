@@ -207,8 +207,8 @@ def obtainProductsList(request):
 def obtainProductsListForDealer(request):
     product_category_id = request.GET.get('product_category_id')
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
-    skip = int(request.GET.get("skip")) -1
-    limit = int(request.GET.get("limit"))
+    # skip = int(request.GET.get("skip")) -1
+    # limit = int(request.GET.get("limit"))
 
     filters = request.GET.get('filters')
 
@@ -270,12 +270,12 @@ def obtainProductsListForDealer(request):
             "quantity" : 1,
            }
         },
-        {
-            "$skip": skip
-        },
-        {
-            "$limit": limit
-        }
+        # {
+        #     "$skip": skip
+        # },
+        # {
+        #     "$limit": limit
+        # }
     ]
     product_list = list(product.objects.aggregate(*(pipeline)))
     return product_list
