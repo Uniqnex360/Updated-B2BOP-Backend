@@ -70,9 +70,11 @@ def skip_for_paths():
     def decorator(f):
         def check_if_health(self, request):
             l = ["loginUser","exportOrders"]
-            if request.path.split("/")[2] in l:
-                response = self.get_response(request)
-                return response
+            k = request.path.split("/")
+            for i in k:
+                if i in  l:
+                    response = self.get_response(request)
+                    return response
             return f(self, request)
         return check_if_health
     return decorator

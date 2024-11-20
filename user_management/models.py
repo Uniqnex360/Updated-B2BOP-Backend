@@ -2,6 +2,7 @@ from django.db import models
 from mongoengine import fields,Document
 from datetime import datetime
 import re
+import random
 from mongoengine.errors import ValidationError
 
 
@@ -29,9 +30,11 @@ class bank_details(Document):
     account_number = fields.StringField()
     branch = fields.StringField()
     currency = fields.StringField()
+    images = fields.ListField(fields.StringField(),default=[])
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     address_id = fields.ReferenceField(address)
+    is_default = fields.BooleanField(default=False)
 
 class role(Document):
     name = fields.StringField()
@@ -45,6 +48,7 @@ class manufacture_unit(Document):
     logo = fields.StringField()
 
 class user(Document):
+    dealer_id = fields.IntField(default=random.randint(100000,999999))
     first_name = fields.StringField()
     last_name = fields.StringField()
     username = fields.StringField(required=True)
@@ -55,10 +59,11 @@ class user(Document):
     mobile_number = fields.StringField()
     active = fields.BooleanField(default=True)
     profile_image = fields.StringField()
+    company_name = fields.StringField()
     role_id = fields.ReferenceField(role)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
-    default_address_id = fields.ListField(fields.ReferenceField(address))
-    address_id = fields.ListField(fields.ReferenceField(address))
+    default_address_id = fields.ReferenceField(address)
+    address_id_list = fields.ListField(fields.ReferenceField(address),default=[])
     bank_details_id = fields.ReferenceField(bank_details)
 
 
@@ -126,6 +131,8 @@ class vendor(Document):
     name = fields.StringField(required=True)
     manufacture_unit_id_str = fields.StringField()
 
+
+
 class product(Document):
     sku_number_product_code_item_number = fields.StringField(required=True)
     # product_code = fields.StringField(required=True)
@@ -153,17 +160,29 @@ class product(Document):
     quantity = fields.FloatField()          #Quantity available or minimum purchase quantity
     availability = fields.BooleanField(default=True)      # "in stock", "out of stock", "pre-order"
     return_applicable = fields.BooleanField(default=False)   # Whether returns are allowed or not
+    return_in_days = fields.StringField()
+    visible = fields.BooleanField(default=True)
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     brand_id = fields.ReferenceField(brand)
     vendor_id = fields.ReferenceField(vendor)
     # Reference to the lowest category level (Level 6 in this example)
     category_id = fields.ReferenceField(product_category)
+    quantity_price = fields.DictField(default={"1-100" : 1,"100-1000" : 2,"1000-10000" : 3})
+    rating_count = fields.IntField(default=0)
+    rating_average = fields.FloatField(default=0.0)
+    from_the_manufacture = fields.StringField()
+
 
 class unit_wise_field_mapping(Document):
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     attributes = fields.DictField(default={})
 
-    
+
+class rating(Document):
+    user_id = fields.ReferenceField(user)
+    product_id = fields.ReferenceField(product)    
+    feedback = fields.StringField(default="")
+    rating_count = fields.FloatField()
 
 
 
@@ -174,16 +193,21 @@ class user_cart_item(Document):
     price = fields.FloatField(required=True)    
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
-    status = fields.StringField(default="pending")
+    status = fields.StringField(choices=["pending", "completed"], default="pending")
+
 
 
 class order(Document):
+    order_id = fields.StringField()
     customer_id = fields.ReferenceField(user, required=True)
     order_items = fields.ListField(fields.ReferenceField(user_cart_item))
+    total_items = fields.IntField()
     order_date = fields.DateTimeField(default=datetime.now)
-    status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
-    shipping_address_id = fields.ReferenceField(address, required=True)
-    amount = fields.FloatField(required=True),             
+    delivery_status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
+    fulfilled_status = fields.StringField(choices=["fulfilled", "unfulfilled", "partially fulfilled" ], default="unfulfilled")
+    payment_status = fields.StringField(choices=["Completed","Pending", "Paid", "Failed" ], default="Pending")
+    shipping_address_id = fields.ReferenceField(address)
+    amount = fields.FloatField(required=True)
     currency = fields.StringField(required=True)             
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
@@ -196,8 +220,19 @@ class transaction(Document):
     total_amount = fields.FloatField(required=True) 
     currency = fields.StringField(required=True) 
     transaction_date = fields.DateTimeField(default=datetime.now)
-    payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"], required=True)
-    status = fields.StringField(choices=["successful", "failed", "pending"], default="pending") 
+    payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"], default="bank_transfer")
+    status = fields.StringField(choices=["completed","paid", "failed", "pending"], default="pending") 
+    payment_proof = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     bank_details_id = fields.ReferenceField(bank_details)
+    message = fields.StringField()
+    transaction_id = fields.StringField()
+
+
+class mail_template(Document):
+    code = fields.StringField()
+    subject = fields.StringField()
+    default_template = fields.StringField()
+    cutomize_template = fields.StringField()
+    manufacture_unit_id_str = fields.StringField()
