@@ -698,6 +698,7 @@ def save_file(request):
             if vendor_obj != None:
                 i['product_obj']['vendor_id'] = vendor_obj.id  
             i['product_obj']['category_id'] = category_id
+            del i['product_obj']['quantity_price']
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
         # else:
         #     DatabaseModel.update_documents(product.objects,{"id" : products_obj.id},{"images" : i['product_obj']['images']})
