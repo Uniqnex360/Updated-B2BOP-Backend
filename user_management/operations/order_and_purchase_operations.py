@@ -12,6 +12,7 @@ from bson import ObjectId
 import pandas as pd
 from b2bop_project.crud import DatabaseModel
 from datetime import datetime, timedelta
+import threading
 
 
 @csrf_exempt
@@ -25,7 +26,7 @@ def createOrUpdateUserCartItem(request):
             "$match" : {
                 "user_id" : json_request['user_id'],
                 "product_id" : json_request['product_id'],
-                "status" : "pending"
+                "status" : "Pending"
             }
         },
         {
@@ -56,7 +57,7 @@ def obtainUserCartItemList(request):
         {
             "$match" : {
                 "user_id" : ObjectId(user_id),
-                "status" : "pending"
+                "status" : "Pending"
             }
         },
         {
@@ -97,7 +98,7 @@ def updateOrDeleteUserCartItem(request):
     data = dict()
     json_request = JSONParser().parse(request)
     if json_request['empty_cart'] == True:
-        DatabaseModel.delete_documents(user_cart_item.objects,{"user_id" : ObjectId(json_request['user_id']),"status" : "pending"})
+        DatabaseModel.delete_documents(user_cart_item.objects,{"user_id" : ObjectId(json_request['user_id']),"status" : "Pending"})
         data['is_deleted'] = True
     elif json_request['is_delete'] == True:
         DatabaseModel.delete_documents(user_cart_item.objects,{"id" : ObjectId(json_request['id'])})
@@ -105,8 +106,6 @@ def updateOrDeleteUserCartItem(request):
     else:
         for cart_ins in json_request['cart_list']:
             cart_obj = DatabaseModel.get_document(user_cart_item.objects,{"id" : cart_ins['id']},['product_id','quantity'])
-            print("price",cart_obj.product_id.list_price,type(cart_obj.product_id.list_price))
-            print("quantity",cart_ins['quantity'], type(cart_ins['quantity']))
             updated_price = (cart_obj.product_id.list_price) * cart_ins['quantity']
             DatabaseModel.update_documents(user_cart_item.objects,{"id" : cart_ins['id']},{"price" : updated_price,"quantity" : cart_ins['quantity']})
 
@@ -121,7 +120,7 @@ def totalCheckOutAmount(request):
     {
         "$match": {
             "user_id": ObjectId(user_id),
-            "status": "pending"
+            "status": "Pending"
         }
     },
     {
@@ -373,6 +372,9 @@ def exportOrders(request):
 
 def obtainDealerlist(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    sort_by = request.GET.get('sort_by')
+    sort_by_value = request.GET.get('sort_by_value')
+
     
     pipeline = [
         {
@@ -421,7 +423,45 @@ def obtainDealerlist(request):
            }
         }
     ]
+    if sort_by != None and sort_by != "":
+        if sort_by != "no_of_orders":
+            pipeline2 = {
+                    "$sort": {
+                        sort_by: int(sort_by_value)
+                    }
+                }
+            pipeline.append(pipeline2)
+            
+    else:
+        pipeline2 = {
+                    "$sort": {
+                        "id" : -1
+                    }
+                }
+        pipeline.append(pipeline2)
+
     dealer_list = list(user.objects.aggregate(*(pipeline)))
+    for ins in dealer_list:
+        pipeline = [
+        {
+            "$match": {
+                "customer_id": ObjectId(ins['id'])
+            }
+        },
+        {
+            "$count": "total_count"
+        }
+        ]
+
+        no_of_orders_obj = list(order.objects.aggregate(*(pipeline)))
+        ins['no_of_orders'] = no_of_orders_obj[0]['total_count'] if no_of_orders_obj else 0
+    if dealer_list != [] and sort_by != None and sort_by != "":
+        if sort_by == "no_of_orders" and int(sort_by_value) == 1:
+            dealer_list = sorted(dealer_list, key=lambda x: x["no_of_orders"])
+        elif sort_by == "no_of_orders" and int(sort_by_value) == -1:
+            dealer_list = sorted(dealer_list, key=lambda x: x["no_of_orders"], reverse=True)
+
+        
     return dealer_list
 
 
@@ -611,6 +651,8 @@ def obtainUserDetails(request):
 
 def obtainOrderListForDealer(request):
     user_id = request.GET.get('user_id')
+    sort_by = request.GET.get('sort_by')
+    sort_by_value = request.GET.get('sort_by_value')
     pipeline = [
     {"$match": {"customer_id": ObjectId(user_id)}},  
     # {
@@ -672,6 +714,24 @@ def obtainOrderListForDealer(request):
         }
     }
     ]
+    if sort_by != None and sort_by != "":
+        if sort_by == "price":
+            sort_by = "list_price"
+        # elif sort_by == "end_level_category":
+        #     sort_by = "product_category_ins.name"
+        pipeline2 = {
+                "$sort": {
+                    sort_by: int(sort_by_value)
+                }
+            }
+    else:
+        pipeline2 = {
+                "$sort": {
+                    "id" : -1
+                }
+            }
+    pipeline.append(pipeline2)   
+
     order_list = list(order.objects.aggregate(*pipeline))
     return order_list
 
@@ -703,7 +763,7 @@ def getManufactureBankDetails(request):
     {
         "$lookup": {
             "from": "bank_details",  
-            "localField": "bank_details_id",
+            "localField": "bank_details_id_list",
             "foreignField": "_id", 
             "as": "bank_details_ins" 
         }
@@ -712,6 +772,14 @@ def getManufactureBankDetails(request):
         "$unwind": {
             "path": "$bank_details_ins", 
             "preserveNullAndEmptyArrays": True
+        }
+    },
+    {
+        "$match": {
+            "$or": [
+                {"bank_details_ins.is_default": True},
+                {"bank_details_ins": {"$eq": None}}
+            ]
         }
     },
     {
@@ -1042,7 +1110,7 @@ def getorderDetails(request):
 
 
 
-def AcceptOrRejectOrder(request):
+def acceptOrRejectOrder(request):
     data = dict()
     order_id = request.GET.get('order_id')
     user_id = request.GET.get('user_id')
@@ -1064,7 +1132,7 @@ def AcceptOrRejectOrder(request):
                     { "$ifNull": ["$last_name", ""] } 
                 ]
                 },
-                "email" : "$user_ins.email",
+                "email" : "$email",
                 "company_name" : {"$ifNull" : ['$company_name',""]},
                 "mobile_number" : {"$ifNull" : ['$mobile_number',""]}
                 
@@ -1072,7 +1140,7 @@ def AcceptOrRejectOrder(request):
         }
         }
     ]
-    admin_user_obj = list(order.objects.aggregate(*(pipeline)))
+    admin_user_obj = list(user.objects.aggregate(*(pipeline)))
 
     pipeline =[
         {
@@ -1095,33 +1163,37 @@ def AcceptOrRejectOrder(request):
                 "order_id" : "$order_id",
                 "name" : {
                 "$concat": [
-                    "$first_name",
-                    { "$ifNull": ["$last_name", ""] } 
+                    "$user_ins.first_name",
+                    { "$ifNull": ["$user_ins.last_name", ""] } 
                 ]
                 },
                 "email" : "$user_ins.email",
-                "amount" : {"$concat":["$currency","$amount"]}
+                "amount" : {"$concat":[{"$toString":"$amount"},"$currency"]}
         }
         }
     ]
     order_user_obj = list(order.objects.aggregate(*(pipeline)))
     if status == "accept":
+        
+        # Start a new thread to call createOrUpdateTopSellings
+        threading.Thread(target=createOrUpdateTopSellings, args=(order_id,)).start()
+
         payment_status = "Completed"
 
         payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_confirmation"})
 
         subject = payment_confirmation_obj.subject.format(order_id=order_user_obj[0]['order_id'])
 
-        body = payment_confirmation_obj.default_template.format(dealer_name=order_user_obj[0]['name'],amount=order_user_obj[0]['amount'],date=getLocalTime(datetime.now()),your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
+        body = payment_confirmation_obj.default_template.format(order_id=order_user_obj[0]['order_id'],dealer_name=order_user_obj[0]['name'],amount=order_user_obj[0]['amount'],date=getLocalTime(datetime.now()),your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
         
     else:
         payment_status = "Failed"
 
-        payment_rejection_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_confirmation"})
+        payment_rejection_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_rejection"})
 
         subject = payment_rejection_obj.subject.format(order_id=order_user_obj[0]['order_id'])
 
-        body = payment_rejection_obj.default_template.format(dealer_name=order_user_obj[0]['name'],your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
+        body = payment_rejection_obj.default_template.format(order_id=order_user_obj[0]['order_id'],dealer_name=order_user_obj[0]['name'],your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
 
     send_email(order_user_obj[0]['email'], subject, body)
 
@@ -1130,3 +1202,116 @@ def AcceptOrRejectOrder(request):
     DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : payment_status,"updated_date" : datetime.now()})
     data['is_action'] = "Mail sended SuccessFully"
     return data
+
+
+def createOrUpdateTopSellingProduct(product_id, product_name, brand_name, category_name, quantity, total_price, manufacture_unit_id):
+    top_selling_product_obj = DatabaseModel.get_document(top_selling_product.objects,{"product_name" : product_name},['id'])
+
+    if top_selling_product_obj != None:
+        top_selling_product_id = top_selling_product_obj.id
+        DatabaseModel.update_documents(top_selling_product.objects,{"id" : top_selling_product_id},{"inc__total_sales" : total_price,"inc__units_sold" : quantity, "last_updated" : datetime.now()})
+    else:
+        new_top_selling_product_obj = DatabaseModel.save_documents(top_selling_product,{"product_id" : product_id, "product_name" : product_name, "category_name" : category_name, "brand_name" :brand_name, "total_sales" : total_price, "units_sold" :quantity, "manufacture_unit_id_str" : str(manufacture_unit_id)})
+        top_selling_product_id = new_top_selling_product_obj.id
+    return top_selling_product_id
+
+
+def createOrUpdateTopSellingBrand(top_selling_product_id, brand_id, brand_name, category_name, quantity, total_price, manufacture_unit_id):
+    top_selling_brand_obj = DatabaseModel.get_document(top_selling_brand.objects,{"brand_name" : brand_name},['id'])
+
+    if top_selling_brand_obj != None:
+        top_selling_brand_id = top_selling_brand_obj.id
+        DatabaseModel.update_documents(top_selling_brand.objects,{"id" : top_selling_brand_id},{"inc__total_sales" : total_price,"inc__units_sold" : quantity, "last_updated" : datetime.now(),"add_to_set__products_sold" : top_selling_brand_id})
+    else:
+        new_top_selling_brand_obj = DatabaseModel.save_documents(top_selling_brand,{"brand_id" : brand_id, "products_sold" : [top_selling_product_id], "category_name" : category_name, "brand_name" :brand_name, "total_sales" : total_price, "units_sold" :quantity, "manufacture_unit_id_str" : str(manufacture_unit_id)})
+        top_selling_brand_id = new_top_selling_brand_obj.id
+    return top_selling_brand_id
+
+
+def createOrUpdateTopSellingCategory(top_selling_product_id, top_selling_brand_id, category_id, category_name, quantity, total_price, manufacture_unit_id):
+    top_selling_category_obj = DatabaseModel.get_document(top_selling_category.objects,{"category_name" : category_name},['id'])
+
+    if top_selling_category_obj != None:
+        top_selling_category_id = top_selling_category_obj.id
+        DatabaseModel.update_documents(top_selling_category.objects,{"id" : top_selling_category_id},{"inc__total_sales" : total_price,"inc__units_sold" : quantity, "last_updated" : datetime.now(),"add_to_set__top_products" : top_selling_product_id, "add_to_set__top_brands" : top_selling_brand_id})
+    else:
+        new_top_selling_category_obj = DatabaseModel.save_documents(top_selling_category,{"category_id" : category_id, "category_name" : category_name, "top_products" : [top_selling_product_id], "top_brands" :[top_selling_brand_id], "total_sales" : total_price, "units_sold" :quantity, "manufacture_unit_id_str" : str(manufacture_unit_id)})
+        top_selling_category_id = new_top_selling_category_obj.id
+    return top_selling_category_id
+
+
+
+def createOrUpdateTopSellings(order_id):
+    pipeline =[
+        {
+            "$match" : {
+                "_id" : ObjectId(order_id)
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "user_cart_item",
+                "localField" : "order_items",
+                "foreignField" : "_id",
+                "as" : "user_cart_item_ins"
+            }
+        },
+        {"$unwind" : "$user_cart_item_ins"},
+        {
+            "$lookup" :{
+                "from" : "product",
+                "localField" : "user_cart_item_ins.product_id",
+                "foreignField" : "_id",
+                "as" : "products_ins"
+            }
+        },
+        {"$unwind" : "$products_ins"},
+        {
+            "$lookup" :{
+                "from" : "brand",
+                "localField" : "products_ins.brand_id",
+                "foreignField" : "_id",
+                "as" : "brand_ins"
+            }
+        },
+        {"$unwind" : "$brand_ins"},
+        {
+            "$lookup" :{
+                "from" : "product_category",
+                "localField" : "products_ins.category_id",
+                "foreignField" : "_id",
+                "as" : "category_ins"
+            }
+        },
+        {"$unwind" : "$category_ins"},
+        {
+        "$project" :{
+                "_id": 0,
+                "product_id" : "$products_ins._id",
+                "product_name" : "$products_ins.product_name",
+
+                "brand_id" : "$brand_ins._id",
+                "brand_name" : "$brand_ins.name",
+
+                "category_id" : "$category_ins._id",
+                "category_name" : "$category_ins.name",
+
+                "currency" : "$products_ins.currency",
+                "quantity" : "$user_cart_item_ins.quantity",
+                "total_price" : "$user_cart_item_ins.price",
+
+                "manufacture_unit_id" : "$products_ins.manufacture_unit_id"
+        }
+        }
+    ]
+    user_cart_item_list = list(order.objects.aggregate(*(pipeline)))
+    
+    for ins in user_cart_item_list:
+        
+        top_selling_product_id = createOrUpdateTopSellingProduct(ins['product_id'], ins['product_name'], ins['brand_name'], ins['category_name'], ins['quantity'], ins['total_price'],ins['manufacture_unit_id'])
+
+        top_selling_brand_id = createOrUpdateTopSellingBrand(top_selling_product_id, ins['brand_id'], ins['brand_name'], ins['category_name'], ins['quantity'], ins['total_price'],ins['manufacture_unit_id'])
+
+        top_selling_category_id = createOrUpdateTopSellingCategory(top_selling_product_id, top_selling_brand_id, ins['category_id'], ins['category_name'], ins['quantity'], ins['total_price'],ins['manufacture_unit_id'])
+
+    return True

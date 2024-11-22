@@ -17,6 +17,7 @@ class address(Document):
     state = fields.StringField(required=True)
     zipCode = fields.StringField(required=True)
     country = fields.StringField(required=True)
+    is_default = fields.BooleanField(default=False) 
 
 
 class bank_details(Document):
@@ -46,6 +47,7 @@ class manufacture_unit(Document):
     description = fields.StringField()
     location = fields.StringField()
     logo = fields.StringField()
+    industry = fields.StringField()
 
 class user(Document):
     dealer_id = fields.IntField(default=random.randint(100000,999999))
@@ -64,7 +66,9 @@ class user(Document):
     manufacture_unit_id = fields.ReferenceField(manufacture_unit)
     default_address_id = fields.ReferenceField(address)
     address_id_list = fields.ListField(fields.ReferenceField(address),default=[])
-    bank_details_id = fields.ReferenceField(bank_details)
+    bank_details_id_list = fields.ListField(fields.ReferenceField(bank_details),default=[])
+    ware_house_id_list = fields.ListField(fields.ReferenceField(address),default=[])
+    website = fields.StringField()
 
 
 # class product_category(Document):
@@ -193,7 +197,7 @@ class user_cart_item(Document):
     price = fields.FloatField(required=True)    
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
-    status = fields.StringField(choices=["pending", "completed"], default="pending")
+    status = fields.StringField(choices=["Pending", "Completed"], default="Pending")
 
 
 
@@ -203,8 +207,8 @@ class order(Document):
     order_items = fields.ListField(fields.ReferenceField(user_cart_item))
     total_items = fields.IntField()
     order_date = fields.DateTimeField(default=datetime.now)
-    delivery_status = fields.StringField(choices=["pending", "shipped", "completed", "canceled"], default="pending")
-    fulfilled_status = fields.StringField(choices=["fulfilled", "unfulfilled", "partially fulfilled" ], default="unfulfilled")
+    delivery_status = fields.StringField(choices=["Pending", "Shipped", "Completed", "Canceled"], default="Pending")
+    fulfilled_status = fields.StringField(choices=["Fulfilled", "Unfulfilled", "Partially Fulfilled" ], default="Unfulfilled")
     payment_status = fields.StringField(choices=["Completed","Pending", "Paid", "Failed" ], default="Pending")
     shipping_address_id = fields.ReferenceField(address)
     amount = fields.FloatField(required=True)
@@ -212,6 +216,7 @@ class order(Document):
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     manufacture_unit_id_str = fields.StringField()
+    is_reorder = fields.BooleanField(default=False)
 
 
 
@@ -221,7 +226,7 @@ class transaction(Document):
     currency = fields.StringField(required=True) 
     transaction_date = fields.DateTimeField(default=datetime.now)
     payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"], default="bank_transfer")
-    status = fields.StringField(choices=["completed","paid", "failed", "pending"], default="pending") 
+    status = fields.StringField(choices=["Completed","Paid", "Failed", "Pending"], default="Pending") 
     payment_proof = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
@@ -235,4 +240,41 @@ class mail_template(Document):
     subject = fields.StringField()
     default_template = fields.StringField()
     cutomize_template = fields.StringField()
+    manufacture_unit_id_str = fields.StringField()
+
+
+
+######     MANUFACUTURE ADMIN DASHBOARD COLLECTIONS    ######
+
+
+class top_selling_product(Document):
+    product_id = fields.ReferenceField(product)
+    product_name = fields.StringField()
+    category_name = fields.StringField()
+    brand_name = fields.StringField()
+    total_sales = fields.FloatField()
+    units_sold = fields.IntField()
+    last_updated = fields.DateTimeField(default=datetime.now())
+    manufacture_unit_id_str = fields.StringField()
+
+
+class top_selling_brand(Document):
+    brand_id = fields.ReferenceField(brand)
+    brand_name = fields.StringField()
+    category_name = fields.StringField()
+    total_sales = fields.IntField()
+    units_sold = fields.IntField()
+    products_sold = fields.ListField(fields.ReferenceField(top_selling_product),default=[])
+    last_updated = fields.DateTimeField(default=datetime.now())
+    manufacture_unit_id_str = fields.StringField()
+
+
+class top_selling_category(Document):
+    category_id = fields.ReferenceField(product_category)
+    category_name = fields.StringField()
+    total_sales = fields.IntField()
+    units_sold = fields.IntField()
+    top_products = fields.ListField(fields.ReferenceField(top_selling_product),default=[])
+    top_brands = fields.ListField(fields.ReferenceField(top_selling_brand),default=[])
+    last_updated = fields.DateTimeField(default=datetime.now())
     manufacture_unit_id_str = fields.StringField()

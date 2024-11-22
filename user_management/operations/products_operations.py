@@ -86,8 +86,8 @@ def obtainProductsList(request):
 
     if product_category_id != None and product_category_id != "":
         match['category_id'] = ObjectId(product_category_id)
-    if filters != None and filters != "all":
-        match['availability'] = True if filters == "true" else False
+    if filters != None and filters != "all" and filters != "":
+        match['availability'] = True if filters == "In-stock" else False
 
     if (is_parent != None and is_parent == '') or is_parent == False:
         pipeline =[
@@ -104,18 +104,23 @@ def obtainProductsList(request):
             },
             {"$unwind" : "$product_category_ins"},
             {
+                "$addFields": {
+                    "end_level_category": "$product_category_ins.name"
+                }
+            },
+            {
             "$project" :{
                 "_id":0,
                 "id" : {"$toString" : "$_id"},
-                "name" : "$product_name",
+                "product_name" : "$product_name",
                 "logo" : {"$first":"$images"},
-                "sku_number" : "$sku_number_product_code_item_number",
+                "sku_number_product_code_item_number" : "$sku_number_product_code_item_number",
                 "mpn" : 1,
                 "msrp" : 1,
                 "was_price" :1,
                 "brand_name" : 1,
                 "visible" : 1,
-                "end_level_category" : "$product_category_ins.name",
+                "end_level_category" : 1,
                 "price" : "$list_price",
                 "currency" : 1,
                 "availability" : 1
@@ -123,10 +128,13 @@ def obtainProductsList(request):
             }
         ]
         if sort_by != None and sort_by != "":
-            sort_by = "list_price"
+            if sort_by == "price":
+                sort_by = "list_price"
+            # elif sort_by == "end_level_category":
+            #     sort_by = "product_category_ins.name"
             pipeline2 = {
                     "$sort": {
-                        sort_by: sort_by_value
+                        sort_by: int(sort_by_value)
                     }
                 }
             pipeline.append(pipeline2)
@@ -179,19 +187,24 @@ def obtainProductsList(request):
             }
         },
         {"$unwind": "$product_category_ins"},
+         {
+            "$addFields": {
+                "end_level_category": "$product_category_ins.name"
+            }
+        },
         {
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$product_ins._id"},
-                "name": "$product_ins.product_name",
+                "product_name": "$product_ins.product_name",
                 "logo": {"$first": "$product_ins.images"},
-                "sku_number": "$product_ins.sku_number_product_code_item_number",
+                "sku_number_product_code_item_number": "$product_ins.sku_number_product_code_item_number",
                 "mpn": "$product_ins.mpn",
                 "msrp": "$product_ins.msrp",
                 "was_price": "$product_ins.was_price",
                 "brand_name": "$product_ins.brand_name",
                 "visible": "$product_ins.visible",
-                "end_level_category": "$product_category_ins.name",
+                "end_level_category": 1,
                 "price": "$product_ins.list_price",
                 "currency": "$product_ins.currency",
                 "availability": "$product_ins.availability"
@@ -200,6 +213,24 @@ def obtainProductsList(request):
         # {"$skip": skip},
             # {"$limit": limit}
         ]
+        if sort_by != None and sort_by != "":
+            if sort_by == "price":
+                sort_by = "product_ins.list_price"
+            elif sort_by == "product_name":
+                sort_by = "product_ins.product_name"
+            elif sort_by == "sku_number_product_code_item_number":
+                sort_by = "product_ins.sku_number_product_code_item_number"
+            elif sort_by == "brand_name":
+                sort_by = "product_ins.brand_name" 
+            # elif sort_by == "end_level_category":
+            #     sort_by = "product_category_ins.name"
+            
+            pipeline2 = {
+                    "$sort": {
+                        sort_by: int(sort_by_value)
+                    }
+                }
+            pipeline.append(pipeline2)
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
@@ -211,6 +242,8 @@ def obtainProductsListForDealer(request):
     # limit = int(request.GET.get("limit"))
 
     filters = request.GET.get('filters')
+    sort_by = request.GET.get('sort_by')
+    sort_by_value = request.GET.get('sort_by_value')
 
     match = {}
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -218,7 +251,7 @@ def obtainProductsListForDealer(request):
 
     if product_category_id != None:
         match['category_id'] = ObjectId(product_category_id)
-    if filters != None and filters != "all":
+    if filters != None and filters != "all" and filters != "":
         match['availability'] = True if filters == "true" else False
 
 
@@ -277,6 +310,17 @@ def obtainProductsListForDealer(request):
         #     "$limit": limit
         # }
     ]
+    if sort_by != None and sort_by != "":
+        # if sort_by == "price":
+        #     sort_by = "list_price"
+        # elif sort_by == "end_level_category":
+        #     sort_by = "product_category_ins.name"
+        pipeline2 = {
+                "$sort": {
+                    sort_by: int(sort_by_value)
+                }
+            }
+        pipeline.append(pipeline2)
     product_list = list(product.objects.aggregate(*(pipeline)))
     return product_list
 
@@ -760,16 +804,16 @@ def productSearch(request):
         {
             "$project": {
                 "_id": {"$toString": "$_id"},
-                "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", None]},
-                "product_name": {"$ifNull": ["$product_name", None]},
-                "brand_name": {"$ifNull": ["$brand_name", None]},
-                "price": {"$ifNull": ["$list_price", None]},
-                "was_price": {"$ifNull": ["$was_price", None]},
-                "discount": {"$ifNull": ["$discount", None]},
-                "currency": {"$ifNull": ["$currency", None]},
-                "quantity": {"$ifNull": ["$quantity", None]},
-                "availability": {"$ifNull": ["$availability", None]},
-                "return_applicable": {"$ifNull": ["$return_applicable", None]},
+                "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", ""]},
+                "product_name": {"$ifNull": ["$product_name", ""]},
+                "brand_name": {"$ifNull": ["$brand_name", ""]},
+                "price": {"$ifNull": ["$list_price", ""]},
+                "was_price": {"$ifNull": ["$was_price", ""]},
+                "discount": {"$ifNull": ["$discount", ""]},
+                "currency": {"$ifNull": ["$currency", ""]},
+                "quantity": {"$ifNull": ["$quantity", ""]},
+                "availability": {"$ifNull": ["$availability", ""]},
+                "return_applicable": {"$ifNull": ["$return_applicable", ""]},
                 "images": {"$ifNull": ["$images", []]},
                 "features": {"$ifNull": ["$features", []]},
                 "tags": {"$ifNull": ["$tags", []]},
@@ -897,16 +941,22 @@ def updateBulkProduct(request):
     data['is_updated'] = False
     json_request = JSONParser().parse(request)
     product_list = json_request['product_list']
+    discount_percentage = json_request.get('discount_percentage')
     for i in product_list:
         product_obj = {}
         if 'list_price' in i:
             product_obj['list_price'] = i['list_price']
+            if discount_percentage != None and discount_percentage != "":
+                product_obj['list_price'] = round(i['list_price'] + (i['list_price'] * (discount_percentage / 100)),2)
+                product_obj['was_price'] = i['list_price']
         if 'visible' in i:
             product_obj['visible'] = i['visible']
         if 'msrp' in i:
             product_obj['msrp'] = i['msrp']
         if 'was_price' in i:
             product_obj['was_price'] = i['was_price']
+            if discount_percentage != None and discount_percentage != "":
+                product_obj['was_price'] = i['list_price']
         DatabaseModel.update_documents(product.objects,{"id" : i['id']},product_obj)
         data['is_updated'] = True
     return data

@@ -1,9 +1,9 @@
 from django.urls import path
-from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, AcceptOrRejectOrder
+from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, acceptOrRejectOrder
 
 
 
-from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate
+from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails
 
 
 from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer
@@ -19,6 +19,8 @@ urlpatterns = [
     path('updateUserProfile/',updateUserProfile,name="updateUserProfile"),
     path('obtainAllMailTemplateForManufactureUnit/',obtainAllMailTemplateForManufactureUnit,name="obtainAllMailTemplateForManufactureUnit"),
     path('updateMailTemplate/',updateMailTemplate,name="updateMailTemplate"),
+    path('deleteAddress/',deleteAddress,name="deleteAddress"),
+    path('deleteBankDetails/',deleteBankDetails,name="deleteBankDetails"),
 
 
     #Manufacture Unit creation
@@ -36,7 +38,7 @@ urlpatterns = [
     path('getManufactureBankDetails/',getManufactureBankDetails,name="getManufactureBankDetails"),
     path('conformPayment/',conformPayment,name="conformPayment"),
     path('getorderDetails/',getorderDetails,name="getorderDetails"),
-    path('AcceptOrRejectOrder/',AcceptOrRejectOrder,name="AcceptOrRejectOrder"),
+    path('acceptOrRejectOrder/',acceptOrRejectOrder,name="acceptOrRejectOrder"),
 
 
 
@@ -72,4 +74,11 @@ urlpatterns = [
 
     #Dealer actions
     path('obtainProductsListForDealer/',obtainProductsListForDealer,name="obtainProductsListForDealer"),
+    path('obtainDealerDetails/',obtainDealerDetails,name="obtainDealerDetails"),
+
+    # Manufacture Admin Dashboard  
+    path('obtainDashboardDetailsForManufactureAdmin/',obtainDashboardDetailsForManufactureAdmin,name="obtainDashboardDetailsForManufactureAdmin"),
+    path('manufactureDashboardEachDealerOrderValue/',manufactureDashboardEachDealerOrderValue,name="manufactureDashboardEachDealerOrderValue"),
+
+   
 ]
