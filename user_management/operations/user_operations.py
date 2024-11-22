@@ -380,13 +380,15 @@ def createUser(request):
     username = json_request['username']
     password = json_request['username']
     manufacture_unit_id = json_request['manufacture_unit_id']
+    role_name = json_request.get('role_name')
     # username = "Test 01"
     # password = "1"
     # email = "sivanandham.skks@gmail.com"
     email = json_request['email']
-    if json_request['role_name'] == "super_admin":
+    if role_name != None and role_name == "super_admin":
         DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3b206569d56ed4d4a759')})
-    elif json_request['role_name'] == "manufacturer_admin":
+    # elif json_request['role_name'] == "manufacturer_admin":
+    else:
         DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3c616569d56ed4d4a75b')})
 
 
