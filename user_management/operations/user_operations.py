@@ -614,18 +614,21 @@ def updateUserProfile(request):
 def deleteAddress(request):
     data = dict()
     json_request = JSONParser().parse(request)
+    print("dddddddddd",json_request,"\n\n\n")
     address_id = json_request.get('address_id')
     is_default = json_request.get('is_default')
     user_id = json_request.get('user_id')
     ware_house = json_request.get('ware_house')
     if address_id != None:
-        DatabaseModel.delete_documents(address.objects,{"id" : address_id}) 
         if ware_house == True:
             DatabaseModel.update_documents(user.objects,{"id" : user_id},{"pull__ware_house_id_list" : ObjectId(address_id)})
+            DatabaseModel.delete_documents(address.objects,{"id" : address_id})
         elif is_default != None and is_default == True:
             DatabaseModel.update_documents(user.objects,{"id" : user_id},{"unset__default_address_id" : ""})
+            DatabaseModel.delete_documents(address.objects,{"id" : address_id})
         else:
             DatabaseModel.update_documents(user.objects,{"id" : user_id},{"pull__address_id_list" : ObjectId(address_id)})
+            DatabaseModel.delete_documents(address.objects,{"id" : address_id})
         data['is_deleted'] = "Address deleted successfully."
     return data
 
