@@ -562,7 +562,7 @@ def createOrder(request):
     data['order_id'] = str(order_obj.id)  
         
     return data
-
+from user_management.operations.user_operations import getAddressFormat
 
 def obtainUserDetails(request):
     data = dict()
@@ -583,20 +583,20 @@ def obtainUserDetails(request):
             "preserveNullAndEmptyArrays": True
         }
     },
-    {
-        "$lookup": {
-            "from": "address",  
-            "localField": "address_id_list",
-            "foreignField": "_id", 
-            "as": "other_address_ins" 
-        }
-    },
-    {
-        "$unwind": {
-            "path": "$other_address_ins", 
-            "preserveNullAndEmptyArrays": True
-        }
-    },
+    # {
+    #     "$lookup": {
+    #         "from": "address",  
+    #         "localField": "address_id_list",
+    #         "foreignField": "_id", 
+    #         "as": "other_address_ins" 
+    #     }
+    # },
+    # {
+    #     "$unwind": {
+    #         "path": "$other_address_ins", 
+    #         "preserveNullAndEmptyArrays": True
+    #     }
+    # },
     {
         "$project": {
             "_id": 0,
@@ -618,31 +618,18 @@ def obtainUserDetails(request):
                 "country": "$address_ins.country",
                 "zipCode": "$address_ins.zipCode"
             },
-            "other_address": {
-                "$cond": {
-                    "if": {
-                        "$gt": [
-                            {"$size": {"$ifNull": ["$other_address_ins", []]}},
-                            0
-                        ]
-                    },
-                    "then": {
-                        "address_id" : {"$toString" : "$other_address_ins._id"},
-                        "street": "$other_address_ins.street",
-                        "city": "$other_address_ins.city",
-                        "state": "$other_address_ins.state",
-                        "country": "$other_address_ins.country",
-                        "zipCode": "$other_address_ins.zipCode"
-                    },
-                    "else": [] 
-                }
-            }
+            "address_id_list" : {"$ifNull" : ["$address_id_list",[]]}
         }
     }
     ]
     user_obj = list(user.objects.aggregate(*pipeline))
-
+    address_obj_list = []
     if user_obj != []:
+        if user_obj[0]['address_id_list'] != []:
+            for i in user_obj[0]['address_id_list']:
+               address_obj_list.append(getAddressFormat(i))
+        del user_obj[0]['address_id_list']
+        user_obj[0]['address_obj_list'] = address_obj_list
         data['user_obj'] = user_obj[0]
     else:
         data['user_obj'] = {}
