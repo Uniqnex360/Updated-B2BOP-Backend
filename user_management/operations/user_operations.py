@@ -1192,7 +1192,7 @@ def obtainDashboardDetailsForDealer(request):
                 "order_date" : {
                     "$dateToString": {
                         "format": "%Y-%m-%dT%H:%M:%S.%LZ",
-                        "date": "$order_date",
+                        "date": "$creation_date",
                     }
                     }
     }},
