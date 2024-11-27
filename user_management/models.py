@@ -138,29 +138,29 @@ class vendor(Document):
 
 
 class product(Document):
-    sku_number_product_code_item_number = fields.StringField(required=True)
-    # product_code = fields.StringField(required=True)
-    # item_number = fields.StringField(required=True)
+    sku_number_product_code_item_number = fields.StringField(default="")
+    # product_code = fields.StringField(default="")
+    # item_number = fields.StringField(default="")
     model = fields.StringField()
-    mpn = fields.StringField(required=True)
+    mpn = fields.StringField(default="")
     upc_ean = fields.StringField()
     
     breadcrumb = fields.StringField()
 
-    brand_name = fields.StringField(required=True)
-    product_name = fields.StringField(required=True)
-    long_description = fields.StringField(required=True)
+    brand_name = fields.StringField(default="")
+    product_name = fields.StringField(default="")
+    long_description = fields.StringField(default="")
     short_description = fields.StringField()
     features = fields.ListField(fields.StringField())
     images = fields.ListField(fields.StringField())
     attributes = fields.DictField(default={})
     tags = fields.ListField(fields.StringField())
     msrp = fields.FloatField(default=0.0)              # Manufacturer's Suggested Retail Price
-    currency = fields.StringField(required=True)
+    currency = fields.StringField(default="")
     was_price = fields.FloatField(default=0.0)          # Previous price before discount
     list_price = fields.FloatField(default=0.0)         # List price of the product
     discount = fields.FloatField(default=0.0)          #Discount percentage or amount
-    quantity_price = fields.FloatField(default=0.0)     # Price per unit for a specified quantity
+    quantity_prices = fields.FloatField(default=0.0)     # Price per unit for a specified quantity
     quantity = fields.FloatField()          #Quantity available or minimum purchase quantity
     availability = fields.BooleanField(default=True)      # "in stock", "out of stock", "pre-order"
     return_applicable = fields.BooleanField(default=False)   # Whether returns are allowed or not

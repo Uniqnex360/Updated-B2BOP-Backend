@@ -129,10 +129,6 @@ def obtainProductsList(request):
             }
         ]
         if sort_by != None and sort_by != "":
-            if sort_by == "price":
-                sort_by = "list_price"
-            # elif sort_by == "end_level_category":
-            #     sort_by = "product_category_ins.name"
             pipeline2 = {
                     "$sort": {
                         sort_by: int(sort_by_value)
@@ -215,17 +211,6 @@ def obtainProductsList(request):
             # {"$limit": limit}
         ]
         if sort_by != None and sort_by != "":
-            if sort_by == "price":
-                sort_by = "product_ins.list_price"
-            elif sort_by == "product_name":
-                sort_by = "product_ins.product_name"
-            elif sort_by == "sku_number_product_code_item_number":
-                sort_by = "product_ins.sku_number_product_code_item_number"
-            elif sort_by == "brand_name":
-                sort_by = "product_ins.brand_name" 
-            # elif sort_by == "end_level_category":
-            #     sort_by = "product_category_ins.name"
-            
             pipeline2 = {
                     "$sort": {
                         sort_by: int(sort_by_value)
@@ -239,8 +224,8 @@ def obtainProductsList(request):
 def obtainProductsListForDealer(request):
     product_category_id = request.GET.get('product_category_id')
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
-    # skip = int(request.GET.get("skip")) -1
-    # limit = int(request.GET.get("limit"))
+    skip = int(request.GET.get("skip")) -1
+    limit = int(request.GET.get("limit"))
 
     filters = request.GET.get('filters')
     sort_by = request.GET.get('sort_by')
@@ -255,74 +240,181 @@ def obtainProductsListForDealer(request):
     if filters != None and filters != "all" and filters != "":
         match['availability'] = True if filters == "true" else False
 
+    if product_category_id == None:
+        pipeline =[
+            {
+                "$match" : match
+            },
+            {
+                "$lookup": {
+                    "from": "product_category",
+                    "localField": "category_id",
+                    "foreignField": "_id",
+                    "as": "product_category_ins"
+                }
+            },
+            {"$unwind" : "$product_category_ins"},
+            {
+                "$lookup": {
+                    "from": "brand",
+                    "localField": "brand_id",
+                    "foreignField": "_id",
+                    "as": "brand_ins"
+                }
+            },
+            {
+            "$unwind": {
+                "path": "$brand_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+            },
+            {
+            "$project" :{
+                "_id":0,
+                "id" : {"$toString" : "$_id"},
+                "name" : "$product_name",
+                "logo" : {"$first":"$images"},
+                "sku_number" : "$sku_number_product_code_item_number",
+                "mpn" : 1,
+                "msrp" : 1,
+                "was_price" :1,
+                "brand_name" : 1,
+                "visible" : 1,
+                "end_level_category" : "$product_category_ins.name",
+                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
+                "price" : "$list_price",
+                "currency" : 1,
+                "availability" : 1,
+                "discount" : 1,
+                "quantity" : 1,
+            }
+            },
+            {
+                "$skip": skip
+            },
+            {
+                "$limit": limit
+            }
+        ]
+        if sort_by != None and sort_by != "":
+            # if sort_by == "price":
+            #     sort_by = "list_price"
+            # elif sort_by == "end_level_category":
+            #     sort_by = "product_category_ins.name"
+            pipeline2 = {
+                    "$sort": {
+                        sort_by: int(sort_by_value)
+                    }
+                }
+            pipeline.append(pipeline2)
+        product_list = list(product.objects.aggregate(*(pipeline)))
 
-    pipeline =[
+    elif product_category_id != None:
+        match = {}
+        match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+        match['product_ins.visible'] = True
+        if filters != None and filters != "all" and filters != "":
+            match['product_ins.availability'] = True if filters == "true" else False
+        pipeline = [
         {
-            "$match" : match
+            "$match": {
+                "_id": ObjectId(product_category_id)
+            }
+        },
+        {
+            "$graphLookup": {
+                "from": "product_category",
+                "startWith": "$_id",
+                "connectFromField": "_id",
+                "connectToField": "parent_category_id",
+                "as": "all_categories",
+                "maxDepth": 5
+            }
+        },
+        {
+            "$project": {
+                "category_ids": {
+                    "$map": {
+                        "input": "$all_categories",
+                        "as": "category",
+                        "in": "$$category._id"
+                    }
+                }
+            }
+        },
+        {"$unwind": "$category_ids"},
+        {
+            "$lookup": {
+                "from": "product",
+                "localField": "category_ids",
+                "foreignField": "category_id",
+                "as": "product_ins"
+            }
+        },
+        {"$unwind": "$product_ins"},
+        {
+                "$match" : match
         },
         {
             "$lookup": {
                 "from": "product_category",
-                "localField": "category_id",
+                "localField": "product_ins.category_id",
                 "foreignField": "_id",
                 "as": "product_category_ins"
             }
         },
-        {"$unwind" : "$product_category_ins"},
+        {"$unwind": "$product_category_ins"},
+         {
+            "$addFields": {
+                "end_level_category": "$product_category_ins.name"
+            }
+        },
         {
             "$lookup": {
                 "from": "brand",
-                "localField": "brand_id",
+                "localField": "product_ins.brand_id",
                 "foreignField": "_id",
                 "as": "brand_ins"
             }
         },
+        {"$unwind": "$brand_ins"},
         {
-        "$unwind": {
-            "path": "$brand_ins", 
-            "preserveNullAndEmptyArrays": True
-        }
-        },
-        {
-           "$project" :{
-            "_id":0,
-            "id" : {"$toString" : "$_id"},
-            "name" : "$product_name",
-            "logo" : {"$first":"$images"},
-            "sku_number" : "$sku_number_product_code_item_number",
-            "mpn" : 1,
-            "msrp" : 1,
-            "was_price" :1,
-            "brand_name" : 1,
-            "visible" : 1,
-            "end_level_category" : "$product_category_ins.name",
-            "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
-            "price" : "$list_price",
-            "currency" : 1,
-            "availability" : 1,
-            "discount" : 1,
-            "quantity" : 1,
-           }
-        },
-        # {
-        #     "$skip": skip
-        # },
-        # {
-        #     "$limit": limit
-        # }
-    ]
-    if sort_by != None and sort_by != "":
-        # if sort_by == "price":
-        #     sort_by = "list_price"
-        # elif sort_by == "end_level_category":
-        #     sort_by = "product_category_ins.name"
-        pipeline2 = {
-                "$sort": {
-                    sort_by: int(sort_by_value)
-                }
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$product_ins._id"},
+                "name": "$product_ins.product_name",
+                "logo": {"$first": "$product_ins.images"},
+                "sku_number": "$product_ins.sku_number_product_code_item_number",
+                "mpn": "$product_ins.mpn",
+                "msrp": "$product_ins.msrp",
+                "was_price": "$product_ins.was_price",
+                "brand_name": "$product_ins.brand_name",
+                "visible": "$product_ins.visible",
+                "end_level_category": 1,
+                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
+                "price": "$product_ins.list_price",
+                "currency": "$product_ins.currency",
+                "availability": "$product_ins.availability",
+                "discount" : "$product_ins.discount",
+                "quantity" : "$product_ins.quantity",
             }
-        pipeline.append(pipeline2)
-    product_list = list(product.objects.aggregate(*(pipeline)))
+        },
+         {
+                "$skip": skip
+            },
+            {
+                "$limit": limit
+            }
+        ]
+        if sort_by != None and sort_by != "":
+            pipeline2 = {
+                    "$sort": {
+                        sort_by: int(sort_by_value)
+                    }
+                }
+            pipeline.append(pipeline2)
+        product_list = list(product_category.objects.aggregate(pipeline))
+
     return product_list
 
 def productCountForDealer(request):
@@ -338,20 +430,75 @@ def productCountForDealer(request):
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all":
         match['availability'] = True if filters == "true" else False
+    
+    if product_category_id == None:
 
+        count_pipeline = [
+            {
+                "$match": match
+            },
+            {
+                "$count": "total_count"
+            }
+        ]
 
-    count_pipeline = [
-        {
-            "$match": match
-        },
-        {
-            "$count": "total_count"
-        }
-    ]
+        # Execute the count pipeline to get the total count
+        total_count_result = list(product.objects.aggregate(*(count_pipeline)))
+        total_count = total_count_result[0]['total_count'] if total_count_result else 0
+    elif product_category_id != None:
+        match = {}
+        match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+        match['product_ins.visible'] = True
+        if filters is not None and filters != "all" and filters != "":
+            match['product_ins.availability'] = True if filters == "true" else False
 
-    # Execute the count pipeline to get the total count
-    total_count_result = list(product.objects.aggregate(*(count_pipeline)))
-    total_count = total_count_result[0]['total_count'] if total_count_result else 0
+        pipeline = [
+            {
+                "$match": {
+                    "_id": ObjectId(product_category_id)
+                }
+            },
+            {
+                "$graphLookup": {
+                    "from": "product_category",
+                    "startWith": "$_id",
+                    "connectFromField": "_id",
+                    "connectToField": "parent_category_id",
+                    "as": "all_categories",
+                    "maxDepth": 5
+                }
+            },
+            {
+                "$project": {
+                    "category_ids": {
+                        "$map": {
+                            "input": "$all_categories",
+                            "as": "category",
+                            "in": "$$category._id"
+                        }
+                    }
+                }
+            },
+            {"$unwind": "$category_ids"},
+            {
+                "$lookup": {
+                    "from": "product",
+                    "localField": "category_ids",
+                    "foreignField": "category_id",
+                    "as": "product_ins"
+                }
+            },
+            {"$unwind": "$product_ins"},
+            {
+                "$match": match
+            },
+            {
+                "$count": "total_products"
+            }
+        ]
+        total_count_result = list(product_category.objects.aggregate(*(pipeline)))
+        total_count = total_count_result[0]['total_products'] if total_count_result else 0
+
     return total_count
 
 def obtainProductDetails(request):
@@ -409,23 +556,13 @@ def obtainProductDetails(request):
     return product_list
 
 
-def has_special_characters(input_string):
-    try:
-        # If input is bytes, decode it to a string
-        if isinstance(input_string, bytes):
-            input_string = input_string.decode('utf-8')
-        
-        # Define a regex pattern for special characters
-        pattern = re.compile(r'[!@#$%^&*(),.?":{}|<>]')
-        return bool(pattern.search(input_string))
-    except:
-        return False
-
-
 
 
 @csrf_exempt
 def upload_file(request):
+    
+    general_fields = ['skuNumber code itemNumber', 'model', 'mpn', 'upc ean', 'level1 category', 'level2 category', 'level3 category', 'level4 category', 'level5 category', 'level6 category', 'breadcrumb', 'brandName', "brandlogo", "vendorName", 'productName', 'long description', 'short description', 'features', 'images', 'attributes', 'tags', 'msrp', 'currency', 'was price', 'list price', 'discount', 'quantity', 'quantityPrice', 'availability', 'return applicable']
+    
     data = dict()
     data['status'] = False
     data['error'] = ""
@@ -437,9 +574,9 @@ def upload_file(request):
     try:
         if file.name.endswith('.xlsx'):
             df = pd.read_excel(file, header = 0)
-            if len(df.iloc[0]) != 47:
-                data['error'] = "File having Missing columns"
-                return data 
+            # if len(df.iloc[0]) != 47:
+            #     data['error'] = "File having Missing columns"
+            #     return data 
         elif file.name.endswith('.csv') or file.name.endswith('.txt'):
             df = pd.read_csv(file)
         else:
@@ -448,6 +585,53 @@ def upload_file(request):
     except Exception as e:
         data['error'] = f"Error reading file: {str(e)}"
         return data
+    original_headers = df.columns
+    fields_list = []
+
+    for ins in original_headers:
+        change = False
+        normalized_field = ins.replace(" ", "").lower()
+        pattern = re.sub(r'\s+', r'\\s+', re.escape(normalized_field.lower()))
+        regex = re.compile(pattern)
+        for field in general_fields:
+            field1 = field.replace(" ", "").lower()
+            if regex.search(field1.lower()):
+                if "level1 category" in fields_list and field == "level1 category":
+                    fields_list.append("level2 category")
+                else:
+                    fields_list.append(field)
+                change = True
+                break
+        
+
+        if change == False:
+            for field in general_fields:
+                if regex.search(field.lower()):
+                    change = True
+                    if "level1 category" in fields_list and field == "level1 category":
+                        fields_list.append("level2 category")
+                    else:
+                        fields_list.append(field)
+                    break
+        
+        
+        if change == False:
+            if ' ' in ins:
+                given_prefix = ins.split()[0].lower()  # Get the first word and make it lowercase
+            else:
+                given_prefix = ins.split("/")[0].lower()
+
+            pattern = re.sub(r'\s+', r'\\s+', re.escape(given_prefix.lower()))
+            regex = re.compile(pattern)
+            for field in general_fields:
+                if regex.search(field.lower()):
+                    if "level1 category" in fields_list and field == "level1 category":
+                        fields_list.append("level2 category")
+                    else:
+                        fields_list.append(field)
+                    break
+            else:
+                fields_list.append(f"NA {ins}")
     i = 0
     validation_error = list()
     xl_data = list()
@@ -460,208 +644,236 @@ def upload_file(request):
         error_dict['row'] = i+1
         error_dict['error'] = list()
         xl_dict['product_obj'] = dict()
+        xl_dict['product_obj']['features'] = list()
+        xl_dict['product_obj']['images'] = list()
+        xl_dict['product_obj']['attributes'] = dict()
         xl_dict['category_obj'] = dict()
         xl_dict['vendor_obj'] = dict()
         xl_dict['brand_obj'] = dict()
-
-        # if str(type(row_dict[0])) == "<class 'float'>":
-        if pd.notnull(row_dict[0]):
-            xl_dict['product_obj']['sku_number_product_code_item_number'] = str(row_dict[0])
-        else:
-            error_dict['error'].append(f"SKU number/Product Code/Item number Should be present")
-
-        if pd.notnull(row_dict[1]):
-            xl_dict['product_obj']['model'] = str(row_dict[1])
-
-        if pd.notnull(row_dict[2]):
-            xl_dict['product_obj']['mpn'] = str(row_dict[2])
-        else:
-            error_dict['error'].append(f"MPN Should be present")
-
-        if pd.notnull(row_dict[3]):
-            xl_dict['product_obj']['upc_ean'] = str(row_dict[3])
-
-
-        if pd.notnull(row_dict[4]) or pd.notnull(row_dict[5]):
-            xl_dict['category_obj']['level 1'] = str(row_dict[4])
-            xl_dict['category_obj']['level 2'] = str(row_dict[5])
-        else:
-           error_dict['error'].append(f"At least a two-level of categorys should be present") 
+        brand_name_exist = False
         
-        if pd.notnull(row_dict[6]):
-            xl_dict['category_obj']['level 3'] = str(row_dict[6])
-        
-        if pd.notnull(row_dict[7]):
-            xl_dict['category_obj']['level 4'] = str(row_dict[7])
 
-        if pd.notnull(row_dict[8]):
-            xl_dict['category_obj']['level 5'] = str(row_dict[8])
+        for j in range(len(row_dict)):
+            if fields_list[j] == 'skuNumber code itemNumber':
+                if pd.notnull(row_dict[j]):
+                    xl_dict['product_obj']['sku_number_product_code_item_number'] = str(row_dict[j])
+                else:
+                    error_dict['error'].append(f"SKU number/Product Code/Item number Should be present")
 
-        if pd.notnull(row_dict[9]):
-            xl_dict['category_obj']['level 6'] = str(row_dict[9])
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'model':
+                xl_dict['product_obj']['model'] = str(row_dict[j])
 
-        if pd.notnull(row_dict[10]):
-            if "[" in row_dict[10]:
+            elif fields_list[j] == 'mpn':
+                if pd.notnull(row_dict[j]):
+                    xl_dict['product_obj']['mpn'] = str(row_dict[j])
+                else:
+                    error_dict['error'].append(f"MPN Should be present")
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'upc ean':
+                xl_dict['product_obj']['upc_ean'] = str(row_dict[j])
+
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level1 category':
+                xl_dict['category_obj']['level 1'] = str(row_dict[j])
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level2 category':
+                xl_dict['category_obj']['level 2'] = str(row_dict[j])
+            
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level3 category':
+                xl_dict['category_obj']['level 3'] = str(row_dict[j])
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level4 category':
+                xl_dict['category_obj']['level 4'] = str(row_dict[j])
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level5 category':
+                xl_dict['category_obj']['level 5'] = str(row_dict[j])
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level6 category':
+                xl_dict['category_obj']['level 6'] = str(row_dict[j])
+
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'breadcrumb':
+                if "[" in row_dict[j]:
+                    try:
+                        data_list = ast.literal_eval(row_dict[j])
+                        result = ' > '.join(data_list)
+                        xl_dict['product_obj']['breadcrumb'] = result
+                    except:
+                        xl_dict['product_obj']['breadcrumb'] = ""
+                else:
+                    xl_dict['product_obj']['breadcrumb'] = str(row_dict[10]) 
+
+            
+            elif fields_list[j] == 'brandName':
+                if pd.notnull(row_dict[j]):
+                    brand_name_exist = True
+                    xl_dict['brand_obj']['name'] = str(row_dict[j])
+                    xl_dict['product_obj']['brand_name'] = str(row_dict[j])
+                else:
+                    if brand_name_exist == False:
+                        error_dict['error'].append(f"Brand Name Should be present")
+            
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'brandlogo':
+                xl_dict['brand_obj']['logo'] = str(row_dict[j])
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'vendorName':
+                xl_dict['vendor_obj']['name'] = str(row_dict[j])
+
+
+            elif fields_list[j] == 'productName':
+                if pd.notnull(row_dict[j]):
+                    xl_dict['product_obj']['product_name'] = str(row_dict[j])
+                else:
+                    error_dict['error'].append(f"Product Name Should be present") 
+
+            elif fields_list[j] == 'long description':
+                if pd.notnull(row_dict[j]):
+                    xl_dict['product_obj']['long_description'] = str(row_dict[j])
+                else:
+                    error_dict['error'].append(f"Long Description Should be present")
+
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'shortdescription':
                 try:
-                    data_list = ast.literal_eval(row_dict[10])
-                    result = ' > '.join(data_list)
-                    xl_dict['product_obj']['breadcrumb'] = result
-                except:
-                    xl_dict['product_obj']['breadcrumb'] = ""
-            else:
-                xl_dict['product_obj']['breadcrumb'] = str(row_dict[10]) 
-
-        
-        if pd.notnull(row_dict[11]):
-            xl_dict['brand_obj']['name'] = str(row_dict[11])
-            xl_dict['product_obj']['brand_name'] = str(row_dict[11])
-        else:
-            error_dict['error'].append(f"Brand Name Should be present")
-
-        if pd.notnull(row_dict[12]):
-            xl_dict['vendor_obj']['name'] = str(row_dict[12])
-
-
-        if pd.notnull(row_dict[13]):
-            xl_dict['product_obj']['product_name'] = str(row_dict[13])
-        else:
-           error_dict['error'].append(f"Product Name Should be present") 
-
-        if pd.notnull(row_dict[14]):
-            xl_dict['product_obj']['long_description'] = str(row_dict[14])
-        else:
-            error_dict['error'].append(f"Long Description Should be present")
-
-
-        if pd.notnull(row_dict[15]):
-            if "[" in row_dict[15]:
-                try:
-                    data_list = ast.literal_eval(row_dict[15])
+                    data_list = ast.literal_eval(row_dict[j])
                     result = ', '.join(data_list)
                     xl_dict['product_obj']['short_description'] = result
                 except:
-                    xl_dict['product_obj']['short_description'] = ""
-            else:
-                xl_dict['product_obj']['short_description'] = str(row_dict[15])
+                    xl_dict['product_obj']['short_description'] = str(row_dict[j])
+                # else:
+                #     xl_dict['product_obj']['short_description'] = str(row_dict[j])
+                
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'features':
+                try:
+                    try:
+                        xl_dict['product_obj']['features'].extend(ast.literal_eval(row_dict[j]))
+                    except:
+                        xl_dict['product_obj']['features'].append(row_dict[j])
+                except:
+                    xl_dict['product_obj']['features'] = str(row_dict[16]).split(",")
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'images':
+                try:
+                    try:
+                        xl_dict['product_obj']['images'].extend(ast.literal_eval(row_dict[j]))
+                    except:
+                        xl_dict['product_obj']['images'].extend(str(row_dict[j]).split(","))
+                except:
+                    xl_dict['product_obj']['images'].append(row_dict[j])
             
-        if pd.notnull(row_dict[16]):
-            if "[" in row_dict[16]:
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'attributes':
                 try:
-                    xl_dict['product_obj']['features'] = ast.literal_eval(row_dict[16])
+                    if "{" in row_dict[j]:
+                        try:
+                            xl_dict['product_obj']['attributes'] = ast.literal_eval(row_dict[j])
+                        except:
+                            pass
+                    else:
+                        found_empty_key = False
+                        for key in xl_dict['product_obj']['attributes']:
+                            if xl_dict['product_obj']['attributes'][key] == "":
+                                # Update the empty key with "attribute"
+                                xl_dict['product_obj']['attributes'][key] = row_dict[j]
+                                found_empty_key = True
+                                break
+                        
+                        # If no empty key was found, create a new one
+                        if not found_empty_key:
+                            # new_key = f"attribute_{len(sample) + 1}"
+                            xl_dict['product_obj']['attributes'][row_dict[j]] = ""
                 except:
-                    xl_dict['product_obj']['features'] = []
-            else:
-                xl_dict['product_obj']['features'] = str(row_dict[16]).split(",")
-
-        if pd.notnull(row_dict[17]):
-            if "[" in row_dict[17]:
-                try:
-                    xl_dict['product_obj']['images'] = ast.literal_eval(row_dict[17])
-                except:
-                    xl_dict['product_obj']['images']= []
-            else:
-                xl_dict['product_obj']['images'] = str(row_dict[17]).split(",")
-        else:
-            error_dict['error'].append(f"Images Link list Should be present")
-
-
-        if pd.notnull(row_dict[18]) or pd.notnull(row_dict[19]) or pd.notnull(row_dict[20]) or pd.notnull(row_dict[21]):
-            xl_dict['product_obj']['attributes'] = {}
-
-            if "{" in row_dict[18]:
-                try:
-                    xl_dict['product_obj']['attributes'] = ast.literal_eval(row_dict[18])
-                except:
-                    xl_dict['product_obj']['attributes']={}
-            else:
-                for j in range(18, 38, 2):  # Step by 2 to access "Attribute name" and "Attribute value" pairs
-                    attribute_name = row_dict[j]          # Attribute name
-                    attribute_value = row_dict[j + 1]     # Attribute value
+                    found_empty_key = False
+                    for key in xl_dict['product_obj']['attributes']:
+                        if xl_dict['product_obj']['attributes'][key] == "":
+                            # Update the empty key with "attribute"
+                            xl_dict['product_obj']['attributes'][key] = row_dict[j]
+                            found_empty_key = True
+                            break
                     
-                    # Check if both attribute name and value are not null
-                    if pd.notnull(attribute_name) and pd.notnull(attribute_value):
-                        xl_dict['product_obj']['attributes'][attribute_name] = attribute_value
-        else:
+                    # If no empty key was found, create a new one
+                    if not found_empty_key:
+                        # new_key = f"attribute_{len(sample) + 1}"
+                        xl_dict['product_obj']['attributes'][row_dict[j]] = ""
+                    
+
+            elif fields_list[j] == 'msrp':
+                if pd.notnull(row_dict[j]):
+                    try:
+                        numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
+                        result = ''.join(numbers)
+                        xl_dict['product_obj']['msrp'] = float(result)
+                    except:
+                        xl_dict['product_obj']['msrp'] = 0.0
+                else:
+                    error_dict['error'].append(f"MSRP Should be present")
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'was price':
+                try:
+                    numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
+                    result = ''.join(numbers)
+                    xl_dict['product_obj']['was_price'] = float(result)
+                except:
+                    xl_dict['product_obj']['was_price'] = 0.0
+                
+
+            elif fields_list[j] == 'list price':
+                if pd.notnull(row_dict[j]):
+                    try:
+                        numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
+                        result = ''.join(numbers)
+                        xl_dict['product_obj']['list_price'] = float(result)
+                    except:
+                        xl_dict['product_obj']['list_price'] = 0.0
+                else:
+                    error_dict['error'].append(f"List Price Should be present")
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'discount':
+                try:
+                    xl_dict['product_obj']['discount'] = float(row_dict[j].replace("%", ""))
+                except:
+                    xl_dict['product_obj']['discount'] = float(row_dict[j])
+
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'currency':
+                xl_dict['product_obj']['currency'] = row_dict[j]
+
+            elif fields_list[j] == 'quantity':
+                if pd.notnull(row_dict[j]):
+                    xl_dict['product_obj']['quantity'] = int(row_dict[j]) 
+                else:
+                    error_dict['error'].append(f"Quantity Should be present")
+
+            elif fields_list[j] == 'availability':
+                if pd.notnull(row_dict[j]):
+                    if str(row_dict[j]).lower() == "out of stock":
+                        xl_dict['product_obj']['availability'] = False
+                    else:
+                        xl_dict['product_obj']['availability'] = True
+                else:
+                    error_dict['error'].append(f"Availability Should be present")
+
+            elif fields_list[j] == 'return applicable':
+                if pd.notnull(row_dict[j]):
+                    if str(row_dict[j]).lower() == "no":
+                        xl_dict['product_obj']['return_applicable'] = False
+                    else:
+                        xl_dict['product_obj']['return_applicable'] = True
+                else:
+                    error_dict['error'].append(f"Return Applicable or not Should be present")
+            
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'tags':
+                xl_dict['product_obj']['tags'] = str(row_dict[j]).split(",")
+                
+                
+
+        if len(xl_dict['category_obj']) < 2:  
+            error_dict['error'].append(f"At least a two-level of categorys should be present") 
+        if len(xl_dict['product_obj']['images']) == 0:
+            error_dict['error'].append(f"Images Link list Should be present")
+        if len(xl_dict['product_obj']['attributes']) < 2:
             error_dict['error'].append(f"At least a two-level of Attributes should be present")
 
-
-        if pd.notnull(row_dict[38]):
-            if has_special_characters(row_dict[38]):
-                try:
-                    xl_dict['product_obj']['msrp'] = float(row_dict[38][1:])
-                except:
-                    xl_dict['product_obj']['msrp'] = 0.0
-            else:
-                try:
-                    xl_dict['product_obj']['msrp'] = float(row_dict[38])
-                except:
-                    xl_dict['product_obj']['msrp'] = 0.0
-        else:
-            error_dict['error'].append(f"MSRP Should be present")
-
-        if pd.notnull(row_dict[39]):
-            if has_special_characters(row_dict[39]):
-                try:
-                    xl_dict['product_obj']['was_price'] = float(row_dict[39][1:])
-                except:
-                    xl_dict['product_obj']['was_price'] = 0.0
-            else:
-                try:
-                    xl_dict['product_obj']['was_price'] = float(row_dict[39])
-                except:
-                    xl_dict['product_obj']['was_price'] = 0.0
-
-        if pd.notnull(row_dict[40]):
-            if has_special_characters(row_dict[40]):
-                try:
-                    xl_dict['product_obj']['list_price'] = float(row_dict[40][1:])
-                except:
-                    xl_dict['product_obj']['list_price'] = 0.0
-            else:
-                try:
-                    xl_dict['product_obj']['list_price'] = float(row_dict[40])
-                except:
-                    xl_dict['product_obj']['list_price'] = 0.0
-        else:
-            error_dict['error'].append(f"List Price Should be present")
-
-        if pd.notnull(row_dict[41]):
-            try:
-                xl_dict['product_obj']['discount'] = float(row_dict[41].replace("%", ""))
-            except:
-                xl_dict['product_obj']['discount'] = float(row_dict[41])
-
-        if pd.notnull(row_dict[42]):
-            xl_dict['product_obj']['currency'] = row_dict[42]
-
-        if pd.notnull(row_dict[43]):
-            xl_dict['product_obj']['quantity'] = int(row_dict[43]) 
-        else:
-            error_dict['error'].append(f"Quantity Should be present")
-
-        if pd.notnull(row_dict[44]):
-            if str(row_dict[44]).lower() == "out of stock":
-                xl_dict['product_obj']['availability'] = False
-            else:
-                xl_dict['product_obj']['availability'] = True
-        else:
-            error_dict['error'].append(f"Availability Should be present")
-
-        if pd.notnull(row_dict[45]):
-            if str(row_dict[45]).lower() == "no":
-                xl_dict['product_obj']['return_applicable'] = False
-            else:
-                xl_dict['product_obj']['return_applicable'] = True
-        else:
-            error_dict['error'].append(f"Return Applicable or not Should be present")
-        
-        if pd.notnull(row_dict[46]):
-            xl_dict['product_obj']['tags'] = str(row_dict[46]).split(",")
-        
         if len(error_dict['error']) > 0:
             xl_contains_error_count += 1
-
-
         validation_error.append(error_dict)
         xl_data.append(xl_dict)
     
@@ -700,6 +912,8 @@ def save_file(request):
     json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request['manufacture_unit_id']
     xl_data = json_request['xl_data']
+    duplicate_products = list()
+    allow_duplicate = json_request.get('allow_duplicate')
     
     for i in xl_data:
         
@@ -770,6 +984,10 @@ def save_file(request):
         products_obj = DatabaseModel.get_document(
             product.objects, {"product_name": i['product_obj']['product_name'], "manufacture_unit_id": ObjectId(manufacture_unit_id)}
         )
+        try:
+            del i['product_obj']['quantity_price']
+        except:
+            pass
         if products_obj is None:
             
             i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -777,12 +995,20 @@ def save_file(request):
             if vendor_obj != None:
                 i['product_obj']['vendor_id'] = vendor_obj.id  
             i['product_obj']['category_id'] = category_id
-            del i['product_obj']['quantity_price']
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
-        # else:
-        #     DatabaseModel.update_documents(product.objects,{"id" : products_obj.id},{"images" : i['product_obj']['images']})
+        else:
+            if allow_duplicate != None and allow_duplicate == True:
+                i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+                i['product_obj']['brand_id'] = brand_obj.id
+                if vendor_obj != None:
+                    i['product_obj']['vendor_id'] = vendor_obj.id  
+                i['product_obj']['category_id'] = category_id
+                DatabaseModel.update_documents(product.objects,{"id" : products_obj.id},i['product_obj'])
+            else:
+                duplicate_products.append(i)
     
     data['status'] = True
+    data['duplicate_products'] = duplicate_products
     return data
 
 

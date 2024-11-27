@@ -614,7 +614,6 @@ def updateUserProfile(request):
 def deleteAddress(request):
     data = dict()
     json_request = JSONParser().parse(request)
-    print("dddddddddd",json_request,"\n\n\n")
     address_id = json_request.get('address_id')
     is_default = json_request.get('is_default')
     user_id = json_request.get('user_id')
@@ -759,7 +758,6 @@ def obtainDealerDetails(request):
 
 def obtainDashboardDetailsForManufactureAdmin(request):
     data = dict()
-    user_id = request.GET.get('user_id')
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     pipeline = [
     {"$match": {"manufacture_unit_id": ObjectId(manufacture_unit_id)}},
@@ -804,6 +802,15 @@ def obtainDashboardDetailsForManufactureAdmin(request):
         }
     },
     {"$unwind" : "$products_ins"},
+    {
+        "$lookup" :{
+            "from" : "brand",
+            "localField" : "products_ins.brand_id",
+            "foreignField" : "_id",
+            "as" : "brand_ins"
+        }
+    },
+    {"$unwind" : "$brand_ins"},
     {"$project" : {
                 "_id" : 0,
                 "id" : {"$toString" : "$_id"},
@@ -811,7 +818,8 @@ def obtainDashboardDetailsForManufactureAdmin(request):
                 "product_name" : "$name",
                 "primary_image" : {"$first":"$products_ins.images"},
                 "sku_number" : "$products_ins.sku_number_product_code_item_number",
-                "brand" : 1,
+                "brand_name" : 1,
+                "brand_logo" : "$brand_ins.logo",
                 "total_sales" : 1,
                 "units_sold" : 1,
                 "last_updated" : {
@@ -820,10 +828,13 @@ def obtainDashboardDetailsForManufactureAdmin(request):
                         "date": "$last_updated",
                     }
                     },
-    }}
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
     ]
     data['top_selling_products'] = list(top_selling_product.objects.aggregate(*(pipeline)))
-
 
 
     pipeline = [
@@ -845,7 +856,11 @@ def obtainDashboardDetailsForManufactureAdmin(request):
                         "date": "$last_updated",
                     }
                     }
-    }}
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
     ]
     data['top_selling_brands'] = list(top_selling_brand.objects.aggregate(*(pipeline)))
 
@@ -867,10 +882,26 @@ def obtainDashboardDetailsForManufactureAdmin(request):
                         "date": "$last_updated",
                     }
                     }
-    }}
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
     ]
     data['top_selling_categorys'] = list(top_selling_category.objects.aggregate(*(pipeline)))
-
+    
+    pipeline = [
+        {
+            "$match": {
+                "manufacture_unit_id_str" : manufacture_unit_id
+            }
+        },
+        {
+            "$count": "total_count"
+    }
+    ]
+    total_order_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['total_order_count'] = total_order_count_result[0]['total_count'] if total_order_count_result else 0
 
     pipeline = [
     {"$match": {
@@ -963,8 +994,212 @@ def manufactureDashboardEachDealerOrderValue(request):
 
         order_amount_obj = list(order.objects.aggregate(*(pipeline)))
         ins['order_value'] = order_amount_obj[0]['total_amount'] if order_amount_obj else 0
-
+    if total_dealer_list != []:
+        total_dealer_list = (sorted(total_dealer_list, key=lambda x: x["order_value"], reverse=True))[0:10]
     data['total_dealer_list'] = total_dealer_list
     return data    
 
 
+def obtainDashboardDetailsForDealer(request):
+    data = dict()
+    user_id = request.GET.get('user_id')
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline = [
+    {
+            "$match": {
+                "customer_id" : ObjectId(user_id),
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "payment_status": {"$in" : ["Completed", "Paid" ]}
+            }
+        },
+    {
+        "$group": {
+            "_id": None,
+            'total_amount': {'$sum': '$amount'},
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            'total_amount': "$total_amount",
+        }
+        }
+    ]
+    total_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['total_spend'] = total_count_result[0]['total_amount'] if total_count_result else 0
+
+
+    pipeline = [
+    {
+        "$match": {
+            "manufacture_unit_id_str": manufacture_unit_id
+                 }
+    },
+    {
+        "$lookup" :{
+            "from" : "product",
+            "localField" : "product_id",
+            "foreignField" : "_id",
+            "as" : "products_ins"
+        }
+    },
+    {"$unwind" : "$products_ins"},
+    {
+        "$lookup" :{
+            "from" : "brand",
+            "localField" : "products_ins.brand_id",
+            "foreignField" : "_id",
+            "as" : "brand_ins"
+        }
+    },
+    {"$unwind" : "$brand_ins"},
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$_id"},
+                "product_id" : {"$toString" : "$product_id"},
+                "product_name" : "$name",
+                "primary_image" : {"$first":"$products_ins.images"},
+                "sku_number" : "$products_ins.sku_number_product_code_item_number",
+                "brand_name" : 1,
+                "brand_logo" : "$brand_ins.logo",
+                "category_name" : 1,
+                "total_sales" : 1,
+                "units_sold" : 1,
+                "last_updated" : {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$last_updated",
+                    }
+                    },
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
+    ]
+    data['top_selling_products'] = list(top_selling_product.objects.aggregate(*(pipeline)))
+
+
+    pipeline = [
+    {
+        "$match": {
+            "manufacture_unit_id_str": manufacture_unit_id
+                 }
+    },
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$_id"},
+                "brand_name" : 1,
+                "category" : 1, 
+                "total_sales" : 1,
+                "units_sold" :1,
+                "last_updated" : {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$last_updated",
+                    }
+                    }
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
+    ]
+    data['top_selling_brands'] = list(top_selling_brand.objects.aggregate(*(pipeline)))
+
+    pipeline = [
+    {
+        "$match": {
+            "manufacture_unit_id_str": manufacture_unit_id
+                 }
+    },
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$_id"},
+                "category_name" : 1,
+                "total_sales" : 1,
+                "units_sold" :1,
+                "last_updated" : {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$last_updated",
+                    }
+                    }
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
+    ]
+    data['top_selling_categorys'] = list(top_selling_category.objects.aggregate(*(pipeline)))
+
+
+    pipeline = [
+    {"$match": {
+        "customer_id" : ObjectId(user_id),
+        "manufacture_unit_id_str": manufacture_unit_id,
+        }
+    },
+    {
+            "$count": "total_count"
+    }
+    ]
+    total_order_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['total_order_count'] = total_order_count_result[0]['total_count'] if total_order_count_result else 0
+
+    pipeline = [
+        {
+            "$match": {
+                "customer_id" : ObjectId(user_id),
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "payment_status": {"$in" : ["Pending", "Failed" ]}
+            }
+        },
+        {
+            "$count": "total_count"
+    }
+    ]
+    pending_order_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['pending_order_count'] = pending_order_count_result[0]['total_count'] if pending_order_count_result else 0
+
+    pipeline = [
+        {
+            "$match": {
+                "customer_id" : ObjectId(user_id),
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "is_reorder": True
+            }
+        },
+        {
+            "$count": "total_count"
+    }
+    ]
+    re_order_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['re_order_count'] = re_order_count_result[0]['total_count'] if re_order_count_result else 0
+
+    pipeline = [
+    {"$match": {
+        "customer_id" : ObjectId(user_id),
+        "manufacture_unit_id_str": manufacture_unit_id,
+        }
+    },
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$_id"},
+                "order_id" : 1,
+                "payment_status" : 1,
+                "amount" :1,
+                "order_date" : {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$order_date",
+                    }
+                    }
+    }},
+    {
+        "$sort" : {"id" : -1}
+    },
+    {"$limit" : 5}
+    ]
+    data['recent_orders'] = list(order.objects.aggregate(*(pipeline)))
+    return data
