@@ -759,6 +759,30 @@ def obtainDealerDetails(request):
 def obtainDashboardDetailsForManufactureAdmin(request):
     data = dict()
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+
+    pipeline = [
+    {
+            "$match": {
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "payment_status": {"$in" : ["Completed"]}
+            }
+        },
+    {
+        "$group": {
+            "_id": None,
+            'total_amount': {'$sum': '$amount'},
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            'total_amount': "$total_amount",
+        }
+        }
+    ]
+    total_sales_result = list(order.objects.aggregate(*(pipeline)))
+    data['total_sales'] = round(total_sales_result[0]['total_amount'] if total_sales_result else 0,2)
+
     pipeline = [
     {"$match": {"manufacture_unit_id": ObjectId(manufacture_unit_id)}},
     {
