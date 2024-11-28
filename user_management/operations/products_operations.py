@@ -885,12 +885,26 @@ def upload_file(request):
     else:
         data['xl_contains_error'] = True
     return data
-
 def saveProductCategory(manufacture_unit_id,name,level,parent_id):
-    product_category_obj = DatabaseModel.get_document(
-            product_category.objects, {"name": name,"manufacture_unit_id_str" : manufacture_unit_id}
-    )
-    if product_category_obj is None:
+
+    pipeline = [
+    {"$match": {"name": name,
+                "manufacture_unit_id_str" : manufacture_unit_id}},  
+    {
+        "$project": {
+            "_id": 1
+        }
+        },
+        {
+            "$limit" : 1
+        }
+    
+    ]
+    product_category_obj = list(product_category.objects.aggregate(*pipeline))
+    
+    if product_category_obj != []:
+        product_category_id = product_category_obj[0]['_id']
+    if product_category_obj is []:
         product_category_obj = DatabaseModel.save_documents(
             product_category, {
                 "name": name,
@@ -898,12 +912,13 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id):
                 "manufacture_unit_id_str" : manufacture_unit_id
             }
         )
+        product_category_id = product_category_obj.id
     if parent_id != None:
-        DatabaseModel.update_documents(product_category.objects,{"id" : product_category_obj.id},{"parent_category_id" : ObjectId(parent_id)})
+        DatabaseModel.update_documents(product_category.objects,{"id" : product_category_id},{"parent_category_id" : ObjectId(parent_id)})
 
-        DatabaseModel.update_documents(product_category.objects,{"id" : parent_id},{"add_to_set__child_categories" : product_category_obj.id})
+        DatabaseModel.update_documents(product_category.objects,{"id" : parent_id},{"add_to_set__child_categories" : product_category_id})
 
-    return product_category_obj.id
+    return product_category_id
 
 
 @csrf_exempt
@@ -955,55 +970,99 @@ def save_file(request):
         DatabaseModel.update_documents(product_category.objects,{"id" : category_id},{"end_level" : True})
 
         # Brand Mapping
-        brand_obj = DatabaseModel.get_document(
-            brand.objects, {"name": i['brand_obj']['name'],"manufacture_unit_id_str" : manufacture_unit_id}
-        )
-        if brand_obj is None:
+        pipeline = [
+        {"$match": {"name": i['brand_obj']['name'],
+                    "manufacture_unit_id_str" : manufacture_unit_id}},  
+        {
+            "$project": {
+                "_id": 1
+            }
+            },
+            {
+                "$limit" :1
+            }
+        
+        ]
+        brand_obj = list(brand.objects.aggregate(*pipeline))
+        if brand_obj != []:
+            brand_id = brand_obj[0]['_id']
+
+        if brand_obj is []:
             brand_obj = DatabaseModel.save_documents(
                 brand, {
                     "name": i['brand_obj']['name'],
                     "manufacture_unit_id_str" : manufacture_unit_id
                 }
             )
+            brand_id = brand_obj.id
 
         # Vendor Mapping
-        vendor_obj = None
+        vendor_id = None
         if i['vendor_obj'].get('name'):
-            vendor_obj = DatabaseModel.get_document(
-                vendor.objects, {"name": i['vendor_obj']['name'],"manufacture_unit_id_str" : manufacture_unit_id}
-            )
-            if vendor_obj is None:
+            pipeline = [
+            {"$match": {"name": i['vendor_obj']['name'],
+                        "manufacture_unit_id_str" : manufacture_unit_id}},  
+            {
+                "$project": {
+                    "_id": 1
+                }
+                },
+                {
+                    "$limit" :1
+                }
+            
+            ]
+            vendor_obj = list(vendor.objects.aggregate(*pipeline))
+            if vendor_obj != []:
+                vendor_id = vendor_obj[0]['_id']
+
+            if vendor_obj is []:
                 vendor_obj = DatabaseModel.save_documents(
                     vendor, {
                         "name": i['vendor_obj']['name'],
                         "manufacture_unit_id_str" : manufacture_unit_id
                     }
                 )
+                vendor_id = vendor_obj.id
 
         # Product Mapping
-        products_obj = DatabaseModel.get_document(
-            product.objects, {"product_name": i['product_obj']['product_name'], "manufacture_unit_id": ObjectId(manufacture_unit_id)}
-        )
+        pipeline = [
+            {"$match": {"product_name": i['product_obj']['product_name'],
+                        "manufacture_unit_id" : ObjectId(manufacture_unit_id)}},  
+            {
+            "$project": {
+                "_id": 1
+            }
+            },
+            {
+                "$limit" :1
+            }
+            
+            ]
+        products_obj = list(product.objects.aggregate(*pipeline))
+        if products_obj != []:
+            products_id = products_obj[0]['_id']
+        
         try:
             del i['product_obj']['quantity_price']
         except:
             pass
-        if products_obj is None:
+        if products_obj is []:
             
             i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-            i['product_obj']['brand_id'] = brand_obj.id
-            if vendor_obj != None:
-                i['product_obj']['vendor_id'] = vendor_obj.id  
+            i['product_obj']['brand_id'] = brand_id
+            if vendor_id != None:
+                i['product_obj']['vendor_id'] = vendor_id 
             i['product_obj']['category_id'] = category_id
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
         else:
             if allow_duplicate != None and allow_duplicate == True:
                 i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-                i['product_obj']['brand_id'] = brand_obj.id
-                if vendor_obj != None:
-                    i['product_obj']['vendor_id'] = vendor_obj.id  
+                i['product_obj']['brand_id'] = brand_id
+                if vendor_id != None:
+                    i['product_obj']['vendor_id'] = vendor_id 
                 i['product_obj']['category_id'] = category_id
-                DatabaseModel.update_documents(product.objects,{"id" : products_obj.id},i['product_obj'])
+                DatabaseModel.update_documents(product.objects,{"id" : products_id},i['product_obj'])
             else:
                 duplicate_products.append(i)
     
