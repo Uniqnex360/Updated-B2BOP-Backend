@@ -50,6 +50,26 @@ def obtainProductCategoryList(request):
     product_category_list = list(product_category.objects.aggregate(*(pipeline)))
     return product_category_list
 
+def obtainProductCategoryListForDealer(request):
+    # manufacture_unit_id = obtainManufactureIdFromToken(request)
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline =[
+        {
+            "$match" :  {
+                    "manufacture_unit_id_str" : manufacture_unit_id,
+                    "end_level" : True
+                }
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "id":{"$toString" : "$_id"},
+            "name" : 1
+           }
+        }
+    ]
+    product_category_list = list(product_category.objects.aggregate(*(pipeline)))
+    return product_category_list
 
 
 def obtainbrandList(request):
@@ -562,6 +582,12 @@ def obtainProductDetails(request):
 def upload_file(request):
     
     general_fields = ['skuNumber code itemNumber', 'model', 'mpn', 'upc ean', 'level1 category', 'level2 category', 'level3 category', 'level4 category', 'level5 category', 'level6 category', 'breadcrumb', 'brandName', "brandlogo", "vendorName", 'productName', 'long description', 'short description', 'features', 'images', 'attributes', 'tags', 'msrp', 'currency', 'was price', 'list price', 'discount', 'quantity', 'quantityPrice', 'availability', 'return applicable']
+
+    image_list = ['image_1', 'image_2', 'image_3', 'image_4', 'image_5','image_6', 'image_7', 'image_8', 'image_9', 'image_10']
+
+    feature_list = ['feature_1', 'feature_2', 'feature_3', 'feature_4', 'feature_5', 'feature_6', 'feature_7', 'feature_8', 'feature_9', 'feature_10', 'feature_11', 'feature_12', 'feature_13', 'feature_14', 'feature_15']
+
+    attribute_list = ['attribute_name_1', 'attribute_value_1', 'attribute_name_2', 'attribute_value_2', 'attribute_name_3', 'attribute_value_3', 'attribute_name_4', 'attribute_value_4', 'attribute_name_5', 'attribute_value_5', 'attribute_name_6', 'attribute_value_6', 'attribute_name_7', 'attribute_value_7', 'attribute_name_8', 'attribute_value_8', 'attribute_name_9', 'attribute_value_9', 'attribute_name_10', 'attribute_value_10', 'attribute_name_11', 'attribute_value_11', 'attribute_name_12', 'attribute_value_12', 'attribute_name_13', 'attribute_value_13', 'attribute_name_14', 'attribute_value_14', 'attribute_name_15', 'attribute_value_15', 'attribute_name_16', 'attribute_value_16']
     
     data = dict()
     data['status'] = False
@@ -630,8 +656,9 @@ def upload_file(request):
                     else:
                         fields_list.append(field)
                     break
+
             else:
-                fields_list.append(f"NA {ins}")
+                fields_list.append(ins)
     i = 0
     validation_error = list()
     xl_data = list()
@@ -669,30 +696,30 @@ def upload_file(request):
                 else:
                     error_dict['error'].append(f"MPN Should be present")
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'upc ean':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'upc ean' or fields_list[j] == "unspsc"):
                 xl_dict['product_obj']['upc_ean'] = str(row_dict[j])
 
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level1 category':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level1 category' or fields_list[j] ==  "category_1"):
                 xl_dict['category_obj']['level 1'] = str(row_dict[j])
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level2 category':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level2 category' or fields_list[j] ==  "category_2"):
                 xl_dict['category_obj']['level 2'] = str(row_dict[j])
             
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level3 category':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level3 category' or fields_list[j] ==  "category_3"):
                 xl_dict['category_obj']['level 3'] = str(row_dict[j])
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level4 category':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level4 category' or fields_list[j] ==  "category_4"):
                 xl_dict['category_obj']['level 4'] = str(row_dict[j])
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level5 category':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level5 category' or fields_list[j] ==  "category_5"):
                 xl_dict['category_obj']['level 5'] = str(row_dict[j])
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'level6 category':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level6 category' or fields_list[j] ==  "category_6"):
                 xl_dict['category_obj']['level 6'] = str(row_dict[j])
 
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'breadcrumb':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'breadcrumb' or fields_list[j] == "taxonomy"):
                 if "[" in row_dict[j]:
                     try:
                         data_list = ast.literal_eval(row_dict[j])
@@ -704,7 +731,7 @@ def upload_file(request):
                     xl_dict['product_obj']['breadcrumb'] = str(row_dict[10]) 
 
             
-            elif fields_list[j] == 'brandName':
+            elif fields_list[j] == 'brandName' or fields_list[j] == 'manufacturer':
                 if pd.notnull(row_dict[j]):
                     brand_name_exist = True
                     xl_dict['brand_obj']['name'] = str(row_dict[j])
@@ -743,7 +770,7 @@ def upload_file(request):
                 # else:
                 #     xl_dict['product_obj']['short_description'] = str(row_dict[j])
                 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'features':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'features' or fields_list[j] in feature_list):
                 try:
                     try:
                         xl_dict['product_obj']['features'].extend(ast.literal_eval(row_dict[j]))
@@ -752,7 +779,7 @@ def upload_file(request):
                 except:
                     xl_dict['product_obj']['features'] = str(row_dict[16]).split(",")
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'images':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'images' or fields_list[j] in image_list):
                 try:
                     try:
                         xl_dict['product_obj']['images'].extend(ast.literal_eval(row_dict[j]))
@@ -761,7 +788,7 @@ def upload_file(request):
                 except:
                     xl_dict['product_obj']['images'].append(row_dict[j])
             
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'attributes':
+            elif pd.notnull(row_dict[j]) and (fields_list[j] == 'attributes' or fields_list[j] in attribute_list):
                 try:
                     if "{" in row_dict[j]:
                         try:
@@ -796,7 +823,7 @@ def upload_file(request):
                         xl_dict['product_obj']['attributes'][row_dict[j]] = ""
                     
 
-            elif fields_list[j] == 'msrp':
+            elif fields_list[j] == 'msrp' or fields_list[j] == "unit_price":
                 if pd.notnull(row_dict[j]):
                     try:
                         numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
@@ -816,7 +843,7 @@ def upload_file(request):
                     xl_dict['product_obj']['was_price'] = 0.0
                 
 
-            elif fields_list[j] == 'list price':
+            elif fields_list[j] == 'list price' or fields_list[j] == "online_price":
                 if pd.notnull(row_dict[j]):
                     try:
                         numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
@@ -885,6 +912,8 @@ def upload_file(request):
     else:
         data['xl_contains_error'] = True
     return data
+
+
 def saveProductCategory(manufacture_unit_id,name,level,parent_id):
 
     pipeline = [
@@ -901,10 +930,9 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id):
     
     ]
     product_category_obj = list(product_category.objects.aggregate(*pipeline))
-    
     if product_category_obj != []:
         product_category_id = product_category_obj[0]['_id']
-    if product_category_obj is []:
+    if product_category_obj == []:
         product_category_obj = DatabaseModel.save_documents(
             product_category, {
                 "name": name,
@@ -987,7 +1015,7 @@ def save_file(request):
         if brand_obj != []:
             brand_id = brand_obj[0]['_id']
 
-        if brand_obj is []:
+        if brand_obj == []:
             brand_obj = DatabaseModel.save_documents(
                 brand, {
                     "name": i['brand_obj']['name'],
@@ -1016,7 +1044,7 @@ def save_file(request):
             if vendor_obj != []:
                 vendor_id = vendor_obj[0]['_id']
 
-            if vendor_obj is []:
+            if vendor_obj == []:
                 vendor_obj = DatabaseModel.save_documents(
                     vendor, {
                         "name": i['vendor_obj']['name'],
@@ -1047,7 +1075,7 @@ def save_file(request):
             del i['product_obj']['quantity_price']
         except:
             pass
-        if products_obj is []:
+        if products_obj == []:
             
             i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
             i['product_obj']['brand_id'] = brand_id
