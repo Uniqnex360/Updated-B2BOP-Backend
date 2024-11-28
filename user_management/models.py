@@ -241,6 +241,7 @@ class mail_template(Document):
     default_template = fields.StringField()
     cutomize_template = fields.StringField()
     manufacture_unit_id_str = fields.StringField()
+    is_default = fields.BooleanField(default=False)
 
 
 

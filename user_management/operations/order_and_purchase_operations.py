@@ -842,23 +842,7 @@ def conformPayment(request):
 
     user_obj = DatabaseModel.get_document(user.objects,{"id" : user_id},['first_name',"last_name",'email','manufacture_unit_id'])
 
-    # # Send a welcome email
-    # subject = "Payment Received - Under Review"
-    # body = f"""
-    # Dear {user_obj.first_name},
-
-    # Thank you for submitting your payment for order #{order_obj.order_id}. Your payment is currently under review, and we are working to verify it as quickly as possible.
-
-    # What to Expect Next:
-
-    # Once the payment is successfully verified, you will receive a confirmation email from us with your order summary, payment confirmation, and shipping information.
-    # We aim to complete this verification process within [estimated time frame, e.g., 1-2 business days].
-    # Thank you for your patience and trust in us. If you have any questions or need further assistance, please feel free to reply to this email.
-
-    # Best regards,
-    # Service Team
-    # """
-    payment_under_review_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_under_review_template"})
+    payment_under_review_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_under_review_template","manufacture_unit_id_str" : str(user_obj.manufacture_unit_id.id)})
 
     subject = payment_under_review_template_obj.subject
 
@@ -870,31 +854,10 @@ def conformPayment(request):
 
     current_time = getLocalTime(datetime.now())
 
-    payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_notification"})
+    payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_notification","manufacture_unit_id_str" : str(user_obj.manufacture_unit_id.id)})
 
     subject = payment_confirmation_obj.subject.format(order_id=order_obj.order_id)
 
-    # body = f"""
-    # Hello {admin_obj.first_name},
-
-    # A new payment confirmation has been submitted by a customer for review.
-
-    # Order Details:
-
-    # Order Number: #{order_obj.order_id}
-    # Customer Name: {user_obj.first_name}
-    # Transaction ID: {transaction_id}
-    # Payment Amount: {total_amount}
-    # Submission Date: {current_time} UTC
-    # Next Steps: Please review the payment confirmation and verify its authenticity. Once confirmed, notify the customer by sending a payment confirmation and order summary.
-
-    # If any issues arise during verification, please contact the customer promptly to resolve.
-
-    # Thank you for your attention to this order.
-
-    # Best regards,
-    # Service Team
-    # """
     body = payment_confirmation_obj.default_template.format(name=admin_obj.first_name,order_id=order_obj.order_id, first_name=user_obj.first_name, transaction_id = transaction_id, total_amount= total_amount, current_time = current_time)
     send_email(admin_obj.email, subject, body)
 
@@ -1121,7 +1084,8 @@ def acceptOrRejectOrder(request):
                 },
                 "email" : "$email",
                 "company_name" : {"$ifNull" : ['$company_name',""]},
-                "mobile_number" : {"$ifNull" : ['$mobile_number',""]}
+                "mobile_number" : {"$ifNull" : ['$mobile_number',""]},
+                "manufacture_unit_id" : {"$toString" : "$manufacture_unit_id"}
                 
 
         }
@@ -1167,7 +1131,7 @@ def acceptOrRejectOrder(request):
 
         payment_status = "Completed"
 
-        payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_confirmation"})
+        payment_confirmation_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_confirmation","manufacture_unit_id_str" : admin_user_obj[0]['manufacture_unit_id']})
 
         subject = payment_confirmation_obj.subject.format(order_id=order_user_obj[0]['order_id'])
 
@@ -1176,7 +1140,7 @@ def acceptOrRejectOrder(request):
     else:
         payment_status = "Failed"
 
-        payment_rejection_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_rejection"})
+        payment_rejection_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_rejection","manufacture_unit_id_str" : admin_user_obj[0]['manufacture_unit_id']})
 
         subject = payment_rejection_obj.subject.format(order_id=order_user_obj[0]['order_id'])
 

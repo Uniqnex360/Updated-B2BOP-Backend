@@ -62,6 +62,25 @@ def loginUser(request):
         response.data['_c1'] = ''
     return response
 
+def saveDefaultMailTemplateForManufactureUnit(manufacture_unit_id):
+    pipeline = [
+    {"$match": {"is_default": True}},  
+    {
+        "$project": {
+            "_id": 0,
+            "code" : 1,
+            "subject" : 1,
+            "default_template": 1, 
+        }
+        }
+    
+    ]
+    mail_template_list = list(mail_template.objects.aggregate(*pipeline))
+    for ins in mail_template_list:
+        ins['manufacture_unit_id_str'] = manufacture_unit_id
+        DatabaseModel.save_documents(mail_template,ins)
+    return True
+
 
 @csrf_exempt
 def createORUpdateManufactureUnit(request):
@@ -75,6 +94,7 @@ def createORUpdateManufactureUnit(request):
         manufacture_obj = DatabaseModel.save_documents(manufacture_unit,json_request['manufacture_unit_obj'])
         data['is_created'] = True
         data['manufacture_unit_id'] = str(manufacture_obj.id)
+        saveDefaultMailTemplateForManufactureUnit(data['manufacture_unit_id'])
     return data
 
 def obtainManufactureUnitList(request):
@@ -385,34 +405,24 @@ def createUser(request):
     # password = "1"
     # email = "sivanandham.skks@gmail.com"
     email = json_request['email']
+    user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
     if role_name != None and role_name == "super_admin":
-        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3b206569d56ed4d4a759')})
-    # elif json_request['role_name'] == "manufacturer_admin":
+
+        manufacture_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
+
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : manufacture_admin_role_id})
+        roleName = "Manufacturer"
+
     else:
-        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : ObjectId('670e3c616569d56ed4d4a75b')})
+        dealer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "dealer_admin"},['id']).id
 
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
+        roleName = "Dealer"
 
-    # # Send a welcome email
-    # subject = "Your B2B-OP Dealer Account Has Been Created - Start Shopping!"
-    # body = f"""
-    # Dear {json_request['name']},
+    subject = user_creation_template_obj.subject.format(role=roleName)
 
-    # We are pleased to inform you that your dealer account has been successfully created. You can now log in to shop for products tailored to your needs!
-    
-    # *Email:* {email}
-    # *Username:* {username}
-    # *Password:*  {password}
-    
-    # Please ensure that you keep your login credentials confidential. If you have any questions or need assistance, don't hesitate to contact us.
+    body = user_creation_template_obj.default_template.format(name = json_request['name'], role=roleName, email=email, username = username, password = password)
 
-    # Best regards,
-    # Service Team
-    # """
-    user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation"})
-
-    subject = user_creation_template_obj.subject
-
-    body = user_creation_template_obj.default_template.format(name = json_request['name'], email=email, username = username, password = password)
     send_email(email, subject, body)
     data['message'] = "User created and email sent!"
 
