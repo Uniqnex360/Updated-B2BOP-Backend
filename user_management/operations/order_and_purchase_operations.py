@@ -193,7 +193,7 @@ def obtainOrderList(request):
     if search_query != "":
         search_obj = {
             "$match" : {
-                "user_ins.username": {"$regex": search_query, "$options": "i"}
+                "user_ins.first_name": {"$regex": search_query, "$options": "i"}
             }
         }
         pipeline.append(search_obj)
@@ -249,7 +249,7 @@ def obtainOrderList(request):
                 "_id": 0,
                 "_id" : {"$toString" : "$_id"},
                 "order_id" : 1,
-                "dealer_name" : "$user_ins.username",
+                "dealer_name" : {"$concat":["$user_ins.first_name",{"$ifNull" : ["$user_ins.last_name",""]}]},
                 "total_items" : 1,
                 "amount" : {"$concat": [{"$toString": "$amount"},"$currency"]},
                 "shipping_service" : "-",
