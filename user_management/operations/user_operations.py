@@ -130,9 +130,10 @@ def obtainManufactureUnitList(request):
         "$project" :{
                 "_id": 0,
                 "id" : {"$toString" : "$_id"},
-                "name" : 1,
-                "logo" : 1,
-                "industry" : 1,
+                "name" : {"$ifNull" : ['$name',""]},
+                "logo" : {"$ifNull" : ['$logo',""]},
+                "location" : {"$ifNull" : ['$location',""]},
+                # "industry" : 1,
         }
         }
     ]
