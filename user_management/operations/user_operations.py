@@ -31,7 +31,7 @@ def loginUser(request):
             manufacture_unit_id = str(user_data_obj.manufacture_unit_id.id)
         payload = {
             'id': str(user_data_obj.id),
-            'name': user_data_obj.username,
+            'name': f"{user_data_obj.first_name} {user_data_obj.last_name or ''}".strip(),
             'email': user_data_obj.email,
             'role_name': user_data_obj.role_id.name,
             # 'max_age': SIMPLE_JWT['SESSION_COOKIE_MAX_AGE'],
@@ -479,15 +479,16 @@ def createUser(request):
     # password = "1"
     # email = "sivanandham.skks@gmail.com"
     email = json_request['email']
-    user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
+   
     if role_name != None and role_name == "super_admin":
-
+        user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","is_default" : True})
         manufacture_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
 
         DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : manufacture_admin_role_id})
         roleName = "Manufacturer"
 
     else:
+        user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
         dealer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "dealer_admin"},['id']).id
 
         DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
@@ -1375,8 +1376,9 @@ def createIndustry(request):
     data = dict()
     json_request = JSONParser().parse(request)
     name = json_request.get('name') 
-    
-    DatabaseModel.save_documents(industry,{"name" : name})
+    obj = DatabaseModel.get_document(industry.objects,{"name" : name})
+    if obj == None:
+        DatabaseModel.save_documents(industry,{"name" : name})
 
     data["is_created"] = True
     return data
