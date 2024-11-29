@@ -3,10 +3,10 @@ from user_management.operations.order_and_purchase_operations import createOrUpd
 
 
 
-from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer
+from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer
 
 
 urlpatterns = [
@@ -28,6 +28,10 @@ urlpatterns = [
     path('obtainManufactureUnitList/',obtainManufactureUnitList,name="obtainManufactureUnitList"),
     path('obtainManufactureUnitDetails/',obtainManufactureUnitDetails,name="obtainManufactureUnitDetails"),
     path('obtainUserListForManufactureUnit/',obtainUserListForManufactureUnit,name="obtainUserListForManufactureUnit"),
+    path('obtainIndustryList/',obtainIndustryList,name="obtainIndustryList"),
+    path('updateIndustryForManufactureUnit/',updateIndustryForManufactureUnit,name="updateIndustryForManufactureUnit"),
+    path('obtainIndustryForManufactureUnit/',obtainIndustryForManufactureUnit,name="obtainIndustryForManufactureUnit"),
+    path('createIndustry/',createIndustry,name="createIndustry"),
 
     #Order Details
     path('obtainOrderList/',obtainOrderList,name="obtainOrderList"), 
@@ -63,8 +67,8 @@ urlpatterns = [
     path('getProductsByTopLevelCategory/',getProductsByTopLevelCategory,name="getProductsByTopLevelCategory"),
     path('updateProduct/',updateProduct,name="updateProduct"),
     path('updateBulkProduct/',updateBulkProduct,name="updateBulkProduct"),
-    path('productCountForDealer/',productCountForDealer,name="productCountForDealer"),
-
+    path('productCountForDealer/',productCountForDealer,name="productCountForDealer"), 
+    path('obtainProductCategoryListForDealer/',obtainProductCategoryListForDealer,name="obtainProductCategoryListForDealer"),
 
     #Upload File
     path('upload_file/',upload_file,name="upload_file"),

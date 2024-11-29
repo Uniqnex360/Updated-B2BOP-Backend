@@ -130,6 +130,7 @@ class product_category(Document):
     description = fields.StringField()
     code = fields.StringField()
     end_level = fields.BooleanField(default=False)
+    industry_id_str = fields.StringField()
 
 class vendor(Document):
     name = fields.StringField(required=True)
@@ -175,6 +176,7 @@ class product(Document):
     rating_count = fields.IntField(default=0)
     rating_average = fields.FloatField(default=0.0)
     from_the_manufacture = fields.StringField()
+    industry_id_str = fields.StringField()
 
 
 class unit_wise_field_mapping(Document):
@@ -279,3 +281,15 @@ class top_selling_category(Document):
     top_brands = fields.ListField(fields.ReferenceField(top_selling_brand),default=[])
     last_updated = fields.DateTimeField(default=datetime.now())
     manufacture_unit_id_str = fields.StringField()
+
+
+class industry(Document):
+    name = fields.StringField()
+
+class manufacture_unit_industry_config(Document):
+    manufacture_unit_id_str = fields.StringField()
+    industry_list = fields.ListField(fields.ReferenceField(industry),default=[])
+
+class user_industry_config(Document):
+    user_id_str = fields.StringField()
+    allowed_industry_list = fields.ListField(fields.ReferenceField(industry),default=[])

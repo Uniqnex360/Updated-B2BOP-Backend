@@ -20,6 +20,7 @@ import random
 @csrf_exempt
 def loginUser(request):
     jsonRequest = JSONParser().parse(request)
+    print("jsonRequest",jsonRequest,"\n\n\n")
     user_data_obj = list(user.objects(**jsonRequest)) 
     token = ''
     valid = False
@@ -86,14 +87,36 @@ def saveDefaultMailTemplateForManufactureUnit(manufacture_unit_id):
 def createORUpdateManufactureUnit(request):
     data = dict()
     json_request = JSONParser().parse(request)
+    industry_list = [ObjectId(ins) for ins in json_request['industry_list']]
+    
     if json_request.get('manufacture_unit_id') != None and json_request.get('manufacture_unit_id') != "":
         DatabaseModel.update_documents(manufacture_unit.objects,{"id" : json_request['manufacture_unit_id']},json_request['manufacture_unit_obj'])
         data['is_updated'] = True
         data['manufacture_unit_id'] = json_request['manufacture_unit_id']
+        pipeline = [
+        {"$match": {
+                    "manufacture_unit_id_str" : json_request['manufacture_unit_id']}},  
+        {
+            "$project": {
+            "_id": 1
+        }
+        },
+        {
+            "$limit" :1
+        }
+        
+        ]
+        industry_obj = list(manufacture_unit_industry_config.objects.aggregate(*pipeline))
+        if industry_obj != []:
+            DatabaseModel.update_documents(manufacture_unit_industry_config.objects,{"manufacture_unit_id_str" : json_request['manufacture_unit_id']},{"industry_list" : industry_list})
+        else:
+            DatabaseModel.save_documents(manufacture_unit_industry_config,{"manufacture_unit_id_str" : json_request['manufacture_unit_id'],"industry_list" : industry_list})
+
     else:
         manufacture_obj = DatabaseModel.save_documents(manufacture_unit,json_request['manufacture_unit_obj'])
         data['is_created'] = True
         data['manufacture_unit_id'] = str(manufacture_obj.id)
+        DatabaseModel.save_documents(manufacture_unit_industry_config,{"manufacture_unit_id_str" : str(manufacture_obj.id),"industry_list" : industry_list})
         saveDefaultMailTemplateForManufactureUnit(data['manufacture_unit_id'])
     return data
 
@@ -115,6 +138,31 @@ def obtainManufactureUnitList(request):
         }
     ]
     manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    for ins in manufacture_unit_list:
+        pipeline = [
+        {
+           "$match" :{"manufacture_unit_id_str" : ins['id']}
+        },
+        {
+            "$lookup" :{
+                "from" : "industry",
+                "localField" : "industry_list",
+                "foreignField" : "_id",
+                "as" : "industry_ins"
+            }
+        },
+        {"$unwind" : "$industry_ins"},
+        {"$project" : {
+                    "_id" : 0,
+                    "id" : {"$toString" : "$industry_ins._id"},
+                    "name" : "$industry_ins.name"
+        }},
+        {
+            "$sort" : {"name" : 1}
+        }
+        ]
+        ins['industry_list'] = list(manufacture_unit_industry_config.objects.aggregate(*(pipeline)))
+
     data['manufacture_unit_list'] = manufacture_unit_list 
     return data
 
@@ -138,6 +186,29 @@ def obtainManufactureUnitDetails(request):
         }
     ]
     manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    pipeline = [
+        {
+           "$match" :{"manufacture_unit_id_str" : manufacture_unit_id}
+        },
+        {
+            "$lookup" :{
+                "from" : "industry",
+                "localField" : "industry_list",
+                "foreignField" : "_id",
+                "as" : "industry_ins"
+            }
+        },
+        {"$unwind" : "$industry_ins"},
+        {"$project" : {
+                    "_id" : 0,
+                    "id" : {"$toString" : "$industry_ins._id"},
+                    "name" : "$industry_ins.name"
+        }},
+        {
+            "$sort" : {"name" : 1}
+        }
+        ]
+    data['industry_list'] = list(manufacture_unit_industry_config.objects.aggregate(*(pipeline)))
     if len(manufacture_unit_list) > 0:
         data['manufacture_unit_obj'] = manufacture_unit_list[0] 
     else:
@@ -1236,4 +1307,73 @@ def obtainDashboardDetailsForDealer(request):
     {"$limit" : 5}
     ]
     data['recent_orders'] = list(order.objects.aggregate(*(pipeline)))
+    return data
+
+
+def obtainIndustryList(request):
+    pipeline = [
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$_id"},
+                "name" : 1
+    }},
+    {
+        "$sort" : {"name" : 1}
+    }
+    ]
+    industry_list = list(industry.objects.aggregate(*(pipeline)))
+    return industry_list
+
+
+@csrf_exempt
+def updateIndustryForManufactureUnit(request):
+    data = dict()
+    json_request = JSONParser().parse()
+    manufacture_unit_id = json_request.get('manufacture_unit_id') 
+
+    industry_list = [ObjectId(ins) for ins in json_request['industry_list']]
+    
+    DatabaseModel.update_documents(manufacture_unit_industry_config.objects,{"manufacture_unit_id_str" : manufacture_unit_id},{"industry_list" : industry_list})
+
+    data["is_updated"] = True
+    return data
+
+
+def obtainIndustryForManufactureUnit(request):
+    manufacture_unit_id = request.get('manufacture_unit_id')
+
+    pipeline = [
+    {
+           "$match" :{"manufacture_unit_id_str" : manufacture_unit_id}
+    },
+    {
+        "$lookup" :{
+            "from" : "industry",
+            "localField" : "industry_list",
+            "foreignField" : "_id",
+            "as" : "industry_ins"
+        }
+    },
+    {"$unwind" : "$industry_ins"},
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$industry_ins._id"},
+                "name" : "$industry_ins.name"
+    }},
+    {
+        "$sort" : {"name" : 1}
+    }
+    ]
+    industry_list = list(manufacture_unit_industry_config.objects.aggregate(*(pipeline)))
+    return industry_list
+
+@csrf_exempt
+def createIndustry(request):
+    data = dict()
+    json_request = JSONParser().parse()
+    name = json_request.get('name') 
+    
+    DatabaseModel.save_documents(industry,{"name" : name})
+
+    data["is_created"] = True
     return data
