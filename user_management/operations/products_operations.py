@@ -1203,36 +1203,66 @@ def productSearch(request):
             }
         },
         {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "product_category_ins"
+            }
+        },
+        {"$unwind" : "$product_category_ins"},
+        {
+            "$addFields": {
+                "end_level_category": "$product_category_ins.name"
+            }
+        },
+        {
             "$project": {
-                "_id": {"$toString": "$_id"},
-                "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", ""]},
-                "product_name": {"$ifNull": ["$product_name", ""]},
-                "brand_name": {"$ifNull": ["$brand_name", ""]},
-                "price": {"$ifNull": ["$list_price", ""]},
-                "was_price": {"$ifNull": ["$was_price", ""]},
-                "discount": {"$ifNull": ["$discount", ""]},
-                "currency": {"$ifNull": ["$currency", ""]},
-                "quantity": {"$ifNull": ["$quantity", ""]},
-                "availability": {"$ifNull": ["$availability", ""]},
-                "return_applicable": {"$ifNull": ["$return_applicable", ""]},
-                "images": {"$ifNull": ["$images", []]},
-                "features": {"$ifNull": ["$features", []]},
-                "tags": {"$ifNull": ["$tags", []]},
-                "attributes" : "$attributes",
-                # "brand_info": {
-                #     "name": {"$arrayElemAt": [{"$ifNull": ["$brand_info.name", ["N/A"]]}, 0]},
-                #     "logo": {"$arrayElemAt": [{"$ifNull": ["$brand_info.logo", ["N/A"]]}, 0]}
-                # },
-                # "vendor_info": {
-                #     "name": {"$arrayElemAt": [{"$ifNull": ["$vendor_info.name", ["N/A"]]}, 0]}
-                # },
-                "breadcrumbs": {
-                    "$map": {
-                        "input": "$breadcrumbs",
-                        "as": "breadcrumb",
-                        "in": "$$breadcrumb.name"
-                    }
-                }
+                "_id": 0,
+                # "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", ""]},
+                # "product_name": {"$ifNull": ["$product_name", ""]},
+                # "brand_name": {"$ifNull": ["$brand_name", ""]},
+                # "price": {"$ifNull": ["$list_price", ""]},
+                # "was_price": {"$ifNull": ["$was_price", ""]},
+                # "discount": {"$ifNull": ["$discount", ""]},
+                # "currency": {"$ifNull": ["$currency", ""]},
+                # "quantity": {"$ifNull": ["$quantity", ""]},
+                # "availability": {"$ifNull": ["$availability", ""]},
+                # "return_applicable": {"$ifNull": ["$return_applicable", ""]},
+                # "images": {"$ifNull": ["$images", []]},
+                # "features": {"$ifNull": ["$features", []]},
+                # "tags": {"$ifNull": ["$tags", []]},
+                # "attributes" : "$attributes",
+                # # "brand_info": {
+                # #     "name": {"$arrayElemAt": [{"$ifNull": ["$brand_info.name", ["N/A"]]}, 0]},
+                # #     "logo": {"$arrayElemAt": [{"$ifNull": ["$brand_info.logo", ["N/A"]]}, 0]}
+                # # },
+                # # "vendor_info": {
+                # #     "name": {"$arrayElemAt": [{"$ifNull": ["$vendor_info.name", ["N/A"]]}, 0]}
+                # # },
+                # "breadcrumbs": {
+                #     "$map": {
+                #         "input": "$breadcrumbs",
+                #         "as": "breadcrumb",
+                #         "in": "$$breadcrumb.name"
+                #     }
+                # }
+                "id" : {"$toString" : "$_id"},
+                "product_name" : "$product_name",
+                "logo" : {"$first":"$images"},
+                "sku_number_product_code_item_number" : "$sku_number_product_code_item_number",
+                "mpn" : 1,
+                "msrp" : 1,
+                "was_price" :1,
+                "brand_name" : 1,
+                "visible" : 1,
+                "end_level_category" : 1,
+                "price" : "$list_price",
+                "currency" : 1,
+                "availability" : 1,
+                "quantity" : 1,
+                "discount" : 1,
+                "brand_logo" : ""
             }
         },
         # {"$skip": 0},
