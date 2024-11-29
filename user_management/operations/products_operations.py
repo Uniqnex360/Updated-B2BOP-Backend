@@ -828,8 +828,9 @@ def upload_file(request):
 
             elif fields_list[j] == 'msrp' or fields_list[j] == "unit_price":
                 if pd.notnull(row_dict[j]):
+                    value = str(row_dict[j])
                     try:
-                        numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
+                        numbers = re.findall(r"\d+\.\d+|\d+", value)
                         result = ''.join(numbers)
                         xl_dict['product_obj']['msrp'] = float(result)
                     except:
@@ -838,8 +839,9 @@ def upload_file(request):
                     error_dict['error'].append(f"MSRP Should be present")
 
             elif pd.notnull(row_dict[j]) and fields_list[j] == 'was price':
+                value = str(row_dict[j])
                 try:
-                    numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
+                    numbers = re.findall(r"\d+\.\d+|\d+", value)
                     result = ''.join(numbers)
                     xl_dict['product_obj']['was_price'] = float(result)
                 except:
@@ -848,8 +850,9 @@ def upload_file(request):
 
             elif fields_list[j] == 'list price' or fields_list[j] == "online_price":
                 if pd.notnull(row_dict[j]):
+                    value = str(row_dict[j])
                     try:
-                        numbers = re.findall(r"\d+\.\d+|\d+", row_dict[j])
+                        numbers = re.findall(r"\d+\.\d+|\d+", value)
                         result = ''.join(numbers)
                         xl_dict['product_obj']['list_price'] = float(result)
                     except:
