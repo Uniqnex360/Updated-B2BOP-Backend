@@ -1147,6 +1147,8 @@ def productSearch(request):
                 "$or": [
                     {"sku_number_product_code_item_number": {"$regex": search_query, "$options": "i"}},
                     {"mpn": {"$regex": search_query, "$options": "i"}},
+                    {"model": {"$regex": search_query, "$options": "i"}},
+                    {"upc_ean": {"$regex": search_query, "$options": "i"}},
                     {"product_name": {"$regex": search_query, "$options": "i"}},
                     {"long_description": {"$regex": search_query, "$options": "i"}},
                     {"short_description": {"$regex": search_query, "$options": "i"}},
