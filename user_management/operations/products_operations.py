@@ -1217,6 +1217,20 @@ def productSearch(request):
             }
         },
         {
+                "$lookup": {
+                    "from": "brand",
+                    "localField": "brand_id",
+                    "foreignField": "_id",
+                    "as": "brand_ins"
+                }
+            },
+            {
+            "$unwind": {
+                "path": "$brand_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+        {
             "$project": {
                 "_id": 0,
                 # "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", ""]},
@@ -1248,9 +1262,11 @@ def productSearch(request):
                 #     }
                 # }
                 "id" : {"$toString" : "$_id"},
+                "name" : "$product_name",
                 "product_name" : "$product_name",
                 "logo" : {"$first":"$images"},
                 "sku_number_product_code_item_number" : "$sku_number_product_code_item_number",
+                "sku_number" : "$sku_number_product_code_item_number",
                 "mpn" : 1,
                 "msrp" : 1,
                 "was_price" :1,
@@ -1262,7 +1278,7 @@ def productSearch(request):
                 "availability" : 1,
                 "quantity" : 1,
                 "discount" : 1,
-                "brand_logo" : ""
+                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]}
             }
         },
         # {"$skip": 0},
@@ -1379,13 +1395,17 @@ def updateBulkProduct(request):
         if 'list_price' in i:
             product_obj['list_price'] = i['list_price']
             if discount_percentage != None and discount_percentage != "":
-                product_obj['list_price'] = round(i['list_price'] + (i['list_price'] * (discount_percentage / 100)),2)
+                percentage = abs(discount_percentage)
+                product_obj['discount'] = percentage
+                product_obj['list_price'] = round(i['list_price'] + (i['list_price'] * (-percentage / 100)),2)
                 product_obj['was_price'] = i['list_price']
             elif discount_price != None and discount_price != "":
+                price = abs(discount_price)
+                product_obj['discount'] = (price / i['list_price']) * 100
                 if i['list_price'] < discount_price:
                     list_price = 0.0
                 else:
-                    list_price = i['list_price'] + discount_price
+                    list_price = i['list_price'] + (-discount_price)
                 product_obj['list_price'] = round(list_price,2)
                 product_obj['was_price'] = i['list_price']
         if 'visible' in i:
