@@ -557,6 +557,8 @@ def obtainProductDetails(request):
             "long_description" : 1,
             "short_description" : 1,
             "list_price" : 1,
+            "msrp" : 1,
+            "was_price" : 1,
             "discount" : {"$concat" : [{"$toString" : "$discount"},"%"]},
             "brand_name" : 1,
             "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
@@ -566,7 +568,8 @@ def obtainProductDetails(request):
             "images" : 1,
             "attributes" : 1,
             "features" : 1,
-            "from_the_manufacture" : 1
+            "from_the_manufacture" : 1,
+            "visible" : 1
            }
         }
     ]
@@ -1335,6 +1338,7 @@ def updateBulkProduct(request):
     json_request = JSONParser().parse(request)
     product_list = json_request['product_list']
     discount_percentage = json_request.get('discount_percentage')
+    discount_price = json_request.get('discount_price')
     for i in product_list:
         product_obj = {}
         if 'list_price' in i:
@@ -1342,13 +1346,20 @@ def updateBulkProduct(request):
             if discount_percentage != None and discount_percentage != "":
                 product_obj['list_price'] = round(i['list_price'] + (i['list_price'] * (discount_percentage / 100)),2)
                 product_obj['was_price'] = i['list_price']
+            elif discount_price != None and discount_price != "":
+                if i['list_price'] < discount_price:
+                    list_price = 0.0
+                else:
+                    list_price = i['list_price'] + discount_price
+                product_obj['list_price'] = round(list_price,2)
+                product_obj['was_price'] = i['list_price']
         if 'visible' in i:
             product_obj['visible'] = i['visible']
         if 'msrp' in i:
             product_obj['msrp'] = i['msrp']
         if 'was_price' in i:
             product_obj['was_price'] = i['was_price']
-            if discount_percentage != None and discount_percentage != "":
+            if (discount_percentage != None and discount_percentage != "") or (discount_price != None and discount_price != ""):
                 product_obj['was_price'] = i['list_price']
         DatabaseModel.update_documents(product.objects,{"id" : i['id']},product_obj)
         data['is_updated'] = True
