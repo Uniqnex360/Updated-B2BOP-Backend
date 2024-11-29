@@ -20,7 +20,6 @@ import random
 @csrf_exempt
 def loginUser(request):
     jsonRequest = JSONParser().parse(request)
-    print("jsonRequest",jsonRequest,"\n\n\n")
     user_data_obj = list(user.objects(**jsonRequest)) 
     token = ''
     valid = False
@@ -308,10 +307,14 @@ def obtainRolesForCreatingUser(request):
 
 def checkEmailExistOrNot(request):
     email = request.GET.get('email')
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
     data = dict()
     pipeline = [
         {
-            "$match" : {"email" : email}
+            "$match" : {
+                "email" : email,
+                "manufacture_unit_id" : ObjectId(manufacture_unit_id)
+                }
         },
         {
             "$limit" : 1
@@ -323,7 +326,7 @@ def checkEmailExistOrNot(request):
         }
     ]
     email_obj = list(user.objects.aggregate(*(pipeline)))
-    if email_obj != None:
+    if email_obj != []:
         data['is_exist'] = True
     else:
         data['is_exist'] = False
