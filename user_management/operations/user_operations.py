@@ -48,7 +48,7 @@ def loginUser(request):
         response.data['data'] = {
             'valid' : valid,
             'id': str(user_data_obj.id),
-            'name': user_data_obj.username,
+            'name': f"{user_data_obj.first_name} {user_data_obj.last_name or ''}".strip(),
             'email': user_data_obj.email,
             'role_name': user_data_obj.role_id.name,
             # 'max_age': SIMPLE_JWT['SESSION_COOKIE_MAX_AGE'],
