@@ -1373,7 +1373,7 @@ def obtainIndustryForManufactureUnit(request):
 @csrf_exempt
 def createIndustry(request):
     data = dict()
-    json_request = JSONParser().parse()
+    json_request = JSONParser().parse(request)
     name = json_request.get('name') 
     
     DatabaseModel.save_documents(industry,{"name" : name})
