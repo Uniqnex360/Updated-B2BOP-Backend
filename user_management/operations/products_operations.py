@@ -1406,7 +1406,7 @@ def updateBulkProduct(request):
                 product_obj['was_price'] = i['list_price']
             elif discount_price != None and discount_price != "":
                 price = abs(discount_price)
-                product_obj['discount'] = (price / i['list_price']) * 100
+                product_obj['discount'] = round((price / i['list_price']) * 100,2)
                 if i['list_price'] < discount_price:
                     list_price = 0.0
                 else:
