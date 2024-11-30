@@ -925,11 +925,12 @@ def upload_file(request):
     return data
 
 
-def saveProductCategory(manufacture_unit_id,name,level,parent_id):
+def saveProductCategory(manufacture_unit_id,name,level,parent_id,industry_id_str):
 
     pipeline = [
     {"$match": {"name": name,
-                "manufacture_unit_id_str" : manufacture_unit_id}},  
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "industry_id_str" :  industry_id_str}},
     {
         "$project": {
             "_id": 1
@@ -948,7 +949,8 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id):
             product_category, {
                 "name": name,
                 "level": level,
-                "manufacture_unit_id_str" : manufacture_unit_id
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "industry_id_str" : industry_id_str
             }
         )
         product_category_id = product_category_obj.id
@@ -965,6 +967,7 @@ def save_file(request):
     data = dict()
     json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request['manufacture_unit_id']
+    industry_id_str = json_request['industry_id']
     xl_data = json_request['xl_data']
     duplicate_products = list()
     allow_duplicate = json_request.get('allow_duplicate')
@@ -980,17 +983,17 @@ def save_file(request):
 
         for key,value in i['category_obj'].items():
             if key == "level 1":
-                level1_obj = saveProductCategory(manufacture_unit_id,value,1,None)
+                level1_obj = saveProductCategory(manufacture_unit_id,value,1,None,industry_id_str)
             elif key == "level 2" and value != "nan":
-                level2_obj = saveProductCategory(manufacture_unit_id,value,2,level1_obj)
+                level2_obj = saveProductCategory(manufacture_unit_id,value,2,level1_obj,industry_id_str)
             elif key == "level 3" and value != "nan":
-                level3_obj = saveProductCategory(manufacture_unit_id,value,3,level2_obj)
+                level3_obj = saveProductCategory(manufacture_unit_id,value,3,level2_obj,industry_id_str)
             elif key == "level 4" and value != "nan":
-                level4_obj = saveProductCategory(manufacture_unit_id,value,4,level3_obj)
+                level4_obj = saveProductCategory(manufacture_unit_id,value,4,level3_obj,industry_id_str)
             elif key == "level 5" and value != "nan":
-                level5_obj = saveProductCategory(manufacture_unit_id,value,5,level4_obj)
+                level5_obj = saveProductCategory(manufacture_unit_id,value,5,level4_obj,industry_id_str)
             elif key == "level 6" and value != "nan":
-                level6_obj = saveProductCategory(manufacture_unit_id,value,6,level5_obj)
+                level6_obj = saveProductCategory(manufacture_unit_id,value,6,level5_obj,industry_id_str)
 
         if level6_obj != None:
             category_id = level6_obj
@@ -1011,7 +1014,9 @@ def save_file(request):
         # Brand Mapping
         pipeline = [
         {"$match": {"name": i['brand_obj']['name'],
-                    "manufacture_unit_id_str" : manufacture_unit_id}},  
+                    "manufacture_unit_id_str" : manufacture_unit_id,
+                    "industry_id_str" : industry_id_str
+                    }},  
         {
             "$project": {
                 "_id": 1
@@ -1030,7 +1035,8 @@ def save_file(request):
             brand_obj = DatabaseModel.save_documents(
                 brand, {
                     "name": i['brand_obj']['name'],
-                    "manufacture_unit_id_str" : manufacture_unit_id
+                    "manufacture_unit_id_str" : manufacture_unit_id,
+                    "industry_id_str" : industry_id_str
                 }
             )
             brand_id = brand_obj.id
@@ -1067,7 +1073,9 @@ def save_file(request):
         # Product Mapping
         pipeline = [
             {"$match": {"product_name": i['product_obj']['product_name'],
-                        "manufacture_unit_id" : ObjectId(manufacture_unit_id)}},  
+                        "manufacture_unit_id" : ObjectId(manufacture_unit_id),
+                        "industry_id_str" : industry_id_str
+                        }},  
             {
             "$project": {
                 "_id": 1
@@ -1093,6 +1101,7 @@ def save_file(request):
             if vendor_id != None:
                 i['product_obj']['vendor_id'] = vendor_id 
             i['product_obj']['category_id'] = category_id
+            i['product_obj']['industry_id_str'] = industry_id_str
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
         else:
             if allow_duplicate != None and allow_duplicate == True:
@@ -1101,6 +1110,7 @@ def save_file(request):
                 if vendor_id != None:
                     i['product_obj']['vendor_id'] = vendor_id 
                 i['product_obj']['category_id'] = category_id
+                i['product_obj']['industry_id_str'] = industry_id_str
                 DatabaseModel.update_documents(product.objects,{"id" : products_id},i['product_obj'])
             else:
                 duplicate_products.append(i)
