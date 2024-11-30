@@ -415,7 +415,7 @@ def obtainProductsListForDealer(request):
                 "price": "$product_ins.list_price",
                 "currency": "$product_ins.currency",
                 "availability": "$product_ins.availability",
-                "discount" : "$product_ins.discount",
+                "discount" : {"$round": ["$product_ins.discount", 2]}, 
                 "quantity" : "$product_ins.quantity",
             }
         },
@@ -559,7 +559,12 @@ def obtainProductDetails(request):
             "list_price" : 1,
             "msrp" : {"$ifNull" : ["$msrp",0.0]},
             "was_price" : {"$ifNull" : ["$was_price",0.0]},
-            "discount" : {"$concat" : [{"$toString" : "$discount"},"%"]},
+            "discount": { 
+            "$concat": [
+                { "$toString": { "$round": ["$discount", 2] } }, 
+                "%" 
+            ] 
+            },
             "brand_name" : 1,
             "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
             "currency" : 1,
@@ -1282,7 +1287,7 @@ def productSearch(request):
                 "currency" : 1,
                 "availability" : 1,
                 "quantity" : 1,
-                "discount" : 1,
+                "discount" : {"$round" : ["$discount",2]},
                 "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]}
             }
         },
