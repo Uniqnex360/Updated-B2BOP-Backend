@@ -92,6 +92,8 @@ class brand(Document):
     product_sub_category_id_str = fields.StringField()
     logo = fields.StringField()
     manufacture_unit_id_str = fields.StringField()
+    industry_id_str = fields.StringField()
+
 
 # class product(Document):
 #     name = fields.StringField(required=True)

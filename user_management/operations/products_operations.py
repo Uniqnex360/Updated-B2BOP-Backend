@@ -1111,12 +1111,17 @@ def productSearch(request):
     json_request = JSONParser().parse(request)
     search_query = json_request['search_query']
     manufacture_unit_id = json_request['manufacture_unit_id']
+    role_name = json_request.get('role_name')
+
+    match = dict()
+    match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+    if role_name != None:
+        match['visible'] = True
+
     
     pipeline = [
         {
-            "$match": {
-                "manufacture_unit_id": ObjectId(manufacture_unit_id)
-            }
+            "$match": match
         },
         {
             "$graphLookup": {
