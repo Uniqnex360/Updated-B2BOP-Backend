@@ -1345,7 +1345,7 @@ def updateIndustryForManufactureUnit(request):
 
 
 def obtainIndustryForManufactureUnit(request):
-    manufacture_unit_id = request.get('manufacture_unit_id')
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
 
     pipeline = [
     {
