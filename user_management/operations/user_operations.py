@@ -313,7 +313,7 @@ def checkEmailExistOrNot(request):
     pipeline = [
         {
             "$match" : {
-                "email" : email,
+                "email" : email.lower(),
                 "manufacture_unit_id" : ObjectId(manufacture_unit_id)
                 }
         },
@@ -479,20 +479,20 @@ def createUser(request):
     # username = "Test 01"
     # password = "1"
     # email = "sivanandham.skks@gmail.com"
-    email = json_request['email']
+    email = (json_request['email']).lower()
    
     if role_name != None and role_name == "super_admin":
         user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","is_default" : True})
         manufacture_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
 
-        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : manufacture_admin_role_id})
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : manufacture_admin_role_id})
         roleName = "Manufacturer"
 
     else:
         user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
         dealer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "dealer_admin"},['id']).id
 
-        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : json_request['email'],"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
         roleName = "Dealer"
 
     subject = user_creation_template_obj.subject.format(role=roleName)
