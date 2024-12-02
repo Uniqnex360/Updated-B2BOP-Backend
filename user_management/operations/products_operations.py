@@ -1173,10 +1173,10 @@ def productSearch(request):
                     {"model": {"$regex": search_query, "$options": "i"}},
                     {"upc_ean": {"$regex": search_query, "$options": "i"}},
                     {"product_name": {"$regex": search_query, "$options": "i"}},
-                    {"long_description": {"$regex": search_query, "$options": "i"}},
-                    {"short_description": {"$regex": search_query, "$options": "i"}},
-                    {"features": {"$regex": search_query, "$options": "i"}},
-                    {"tags": {"$regex": search_query, "$options": "i"}},
+                    {"brand_info.name": {"$regex": search_query, "$options": "i"}},
+                    {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
+                    {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}},
+                    
                     {
                         "$expr": {
                             "$gt": [
@@ -1216,9 +1216,11 @@ def productSearch(request):
                             ]
                         }
                     },
-                    {"brand_info.name": {"$regex": search_query, "$options": "i"}},
-                    {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
-                    {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}}
+                    {"long_description": {"$regex": search_query, "$options": "i"}},
+                    {"short_description": {"$regex": search_query, "$options": "i"}},
+                    {"features": {"$regex": search_query, "$options": "i"}},
+                    {"tags": {"$regex": search_query, "$options": "i"}},
+                    
                 ]
             }
         },
