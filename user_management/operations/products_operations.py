@@ -18,16 +18,37 @@ def obtainProductCategoryList(request):
     # manufacture_unit_id = obtainManufactureIdFromToken(request)
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     product_category_id = request.GET.get('product_category_id')
+    
+    match = dict()
+    match['manufacture_unit_id_str'] = manufacture_unit_id
+    parent_category_obj = None
     if product_category_id == None:
-        match = {
-                    "manufacture_unit_id_str" : manufacture_unit_id,
-                    "level" : 1
-                }
+        match['level'] = 1
     else:
-        match = {
-                    "manufacture_unit_id_str" : manufacture_unit_id,
-                    "parent_category_id" : ObjectId(product_category_id)
-                }
+        match['parent_category_id'] = ObjectId(product_category_id)
+        pipeline =[
+        {
+            "$match" : {"_id" : ObjectId(product_category_id)}
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "id":{"$toString" : "$_id"},
+            "name" : 1,
+            "parent_category" : True,
+            "is_parent": { 
+                "$cond": { 
+                    "if": { "$ne": ["$child_categories", []] }, 
+                    "then": True, 
+                    "else": False 
+                } 
+            }
+           }
+        }
+        ]
+        parent_category_obj = (list(product_category.objects.aggregate(*(pipeline))))[0]
+
+
     pipeline =[
         {
             "$match" : match
@@ -48,17 +69,53 @@ def obtainProductCategoryList(request):
         }
     ]
     product_category_list = list(product_category.objects.aggregate(*(pipeline)))
+    if product_category_list != [] and parent_category_obj != None:
+        product_category_list.append(parent_category_obj)
+
     return product_category_list
+
+def obtainIndustryListForDealer(request):
+    user_id = request.GET.get("user_id")
+    pipeline =[
+        {
+            "$match" : {
+                "user_id_str" : user_id
+            }
+        },
+        {
+        "$lookup" :{
+            "from" : "industry",
+            "localField" : "allowed_industry_list",
+            "foreignField" : "_id",
+            "as" : "industry_ins"
+        }
+        },
+        {"$unwind" : "$industry_ins"},
+        {"$project" : {
+                    "_id" : 0,
+                    "id" : {"$toString" : "$industry_ins._id"},
+                    "name" : "$industry_ins.name"
+        }},
+        {
+            "$sort" : {"name" : 1}
+        }
+    ]
+    industry_list = list(user_industry_config.objects.aggregate(*(pipeline)))
+    return industry_list
+
 
 def obtainProductCategoryListForDealer(request):
     # manufacture_unit_id = obtainManufactureIdFromToken(request)
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    industry_id_str = request.GET.get('industry_id')
+    match = dict()
+    match['manufacture_unit_id_str'] = manufacture_unit_id
+    match['end_level'] = True
+    if industry_id_str != None:
+        match['industry_id_str'] = industry_id_str
     pipeline =[
         {
-            "$match" :  {
-                    "manufacture_unit_id_str" : manufacture_unit_id,
-                    "end_level" : True
-                }
+            "$match" : match
         },
         {
            "$project" :{
@@ -309,24 +366,25 @@ def obtainProductsListForDealer(request):
                 "quantity" : 1,
             }
             },
-            {
-                "$skip": skip
-            },
-            {
-                "$limit": limit
-            }
+            
         ]
         if sort_by != None and sort_by != "":
             # if sort_by == "price":
             #     sort_by = "list_price"
             # elif sort_by == "end_level_category":
             #     sort_by = "product_category_ins.name"
-            pipeline2 = {
+            pipeline2 = [{
                     "$sort": {
                         sort_by: int(sort_by_value)
                     }
-                }
-            pipeline.append(pipeline2)
+                },
+                {
+                    "$skip": skip
+                },
+                {
+                    "$limit": limit
+                }]
+            pipeline.extend(pipeline2)
         product_list = list(product.objects.aggregate(*(pipeline)))
 
     elif product_category_id != None:
@@ -418,21 +476,21 @@ def obtainProductsListForDealer(request):
                 "discount" : {"$round": ["$product_ins.discount", 2]}, 
                 "quantity" : "$product_ins.quantity",
             }
-        },
-         {
-                "$skip": skip
-            },
-            {
-                "$limit": limit
-            }
+        }
         ]
         if sort_by != None and sort_by != "":
-            pipeline2 = {
+            pipeline2 = [{
                     "$sort": {
                         sort_by: int(sort_by_value)
                     }
-                }
-            pipeline.append(pipeline2)
+                },
+                {
+                    "$skip": skip
+                },
+                {
+                    "$limit": limit
+                }]
+            pipeline.extend(pipeline2)
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
@@ -1117,6 +1175,7 @@ def save_file(request):
     
     data['status'] = True
     data['duplicate_products'] = duplicate_products
+    data['industry_id'] = industry_id_str
     return data
 
 
@@ -1168,12 +1227,13 @@ def productSearch(request):
         {
             "$match": {
                 "$or": [
+                    {"brand_info.name": {"$regex": search_query, "$options": "i"}},
                     {"sku_number_product_code_item_number": {"$regex": search_query, "$options": "i"}},
                     {"mpn": {"$regex": search_query, "$options": "i"}},
                     {"model": {"$regex": search_query, "$options": "i"}},
                     {"upc_ean": {"$regex": search_query, "$options": "i"}},
                     {"product_name": {"$regex": search_query, "$options": "i"}},
-                    {"brand_info.name": {"$regex": search_query, "$options": "i"}},
+                    # {"brand_info.name": {"$regex": search_query, "$options": "i"}},
                     {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
                     {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}},
                     

@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from user_management.models import *
-from django.http import JsonResponse
+from django.http import JsonResponse,HttpResponse
 from b2bop_project.custom_mideleware import SIMPLE_JWT, createJsonResponse, createCookies,obtainManufactureIdFromToken, obtainUserIdFromToken, obtainUserRoleFromToken
 from rest_framework.decorators import api_view
 from django.middleware import csrf
@@ -14,6 +14,11 @@ from b2bop_project.settings import SENDGRID_API_KEY
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import random
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image
+from io import BytesIO
+import base64
+from PIL import Image as PILImage
 
 
 @api_view(('GET', 'POST'))
@@ -121,7 +126,9 @@ def createORUpdateManufactureUnit(request):
 
 def obtainManufactureUnitList(request):
     # role_name = obtainUserRoleFromToken(request)
-    
+    sort = request.GET.get('sort')
+    sort_by_value = request.GET.get('sort_by_value')
+   
     data = dict()
     manufacture_unit_list = list()
     # if role_name == "admin":
@@ -137,6 +144,21 @@ def obtainManufactureUnitList(request):
         }
         }
     ]
+    if sort != None and sort != "":
+        pipeline2 = {
+            "$sort" : {
+                sort : sort_by_value
+            }
+        }
+    else:
+        pipeline2 = {
+            "$sort" : {
+                "id" : -1
+            }
+        }
+    pipeline.append(pipeline2)
+
+        
     manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
     for ins in manufacture_unit_list:
         pipeline = [
@@ -476,6 +498,7 @@ def createUser(request):
     password = json_request['username']
     manufacture_unit_id = json_request['manufacture_unit_id']
     role_name = json_request.get('role_name')
+    industry_list = json_request.get("industry_list")
     # username = "Test 01"
     # password = "1"
     # email = "sivanandham.skks@gmail.com"
@@ -492,7 +515,13 @@ def createUser(request):
         user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
         dealer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "dealer_admin"},['id']).id
 
-        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
+        user_obj = DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
+
+
+        if industry_list != None and industry_list != []:
+            industry_list = [ObjectId(ins) for ins in industry_list]
+            DatabaseModel.save_documents(user_industry_config,{"user_id_str" : str(user_obj.id),"allowed_industry_list" : industry_list})
+
         roleName = "Dealer"
 
     subject = user_creation_template_obj.subject.format(role=roleName)
@@ -1383,3 +1412,248 @@ def createIndustry(request):
 
     data["is_created"] = True
     return data
+
+
+def base64_to_image(base64_string):
+    try:
+        # Remove 'data:image/...;base64,' if present
+        if "base64," in base64_string:
+            base64_string = base64_string.split("base64,")[1]
+        # Decode the Base64 string
+        image_data = base64.b64decode(base64_string)
+        # Convert to a BytesIO object
+        return BytesIO(image_data)
+    except Exception as e:
+        print(f"Error decoding Base64: {e}")
+        return None
+
+def stringify_dict(data):
+    if isinstance(data, dict) and data != {}:
+        return ", ".join(f"{key}: {value}" for key, value in data.items())
+    return "Address Not Available"
+
+
+@api_view(('GET', 'POST'))
+def exportAllManufacturerDetails(request):
+    pipeline = [
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": {"$ifNull": ['$name', ""]},
+                "logo": {"$ifNull": ['$logo', ""]},
+                "location": {"$ifNull": ['$location', ""]},
+                "Industry Handled" : ""
+            }
+        },
+        {"$sort": {"id": -1}},
+    ]
+    manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    for ins in manufacture_unit_list:
+        industry_pipeline = [
+            {"$match": {"manufacture_unit_id_str": ins['id']}},
+            {
+                "$lookup": {
+                    "from": "industry",
+                    "localField": "industry_list",
+                    "foreignField": "_id",
+                    "as": "industry_ins",
+                }
+            },
+            {"$unwind": "$industry_ins"},
+            {
+                "$group": {
+                    "_id": None,
+                    "industry_list": {"$push": "$industry_ins.name"}
+                }
+            },
+        ]
+        obj = list(manufacture_unit_industry_config.objects.aggregate(*(industry_pipeline)))
+        if obj != []:
+            ins['Industry Handled'] = ', '.join(obj[0]['industry_list'])
+        del ins["id"]
+
+    # Create an Excel workbook
+    wb = Workbook()
+
+    # Add manufacturer details to the first sheet
+    ws1 = wb.active
+    ws1.title = "Manufacturer Details"
+
+    # Add headers
+    ws1.append(["Name", "Logo", "Location", "Industry Handled"])
+
+    # Add manufacturer details
+    for detail in manufacture_unit_list:
+        name = detail.get("name", "")
+        logo_base64 = detail.get("logo", "")
+        location = detail.get("location", "")
+        industry_handled = detail.get("Industry Handled", "")
+
+        # Decode Base64 to image
+        image_stream = base64_to_image(logo_base64)
+        try:
+            image = PILImage.open(image_stream)
+            image_file = BytesIO()
+            image.save(image_file, format="PNG")  # Save as PNG
+            image_file.seek(0)
+
+            # Add image to Excel
+            excel_image = Image(image_file)
+            excel_image.width, excel_image.height = 100, 100  # Resize as needed
+            ws1.append([name])  # Add name first
+            ws1.add_image(excel_image, f"B{ws1.max_row}")  # Add image in the next column
+            ws1.cell(row=ws1.max_row, column=3).value = location
+            ws1.cell(row=ws1.max_row, column=4).value = industry_handled 
+        except:
+            ws1.append([name, "Invalid Logo", location, industry_handled])
+    # Create a HttpResponse object with Excel content type
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="Manufacturers_Details.xlsx"'
+
+    # Save the Excel file to the response
+    with BytesIO() as buffer:
+        wb.save(buffer)
+        buffer.seek(0)
+        response.write(buffer.read())
+
+    return response
+
+
+
+@api_view(('GET', 'POST'))
+def exportAllManufacturerDetailsandUserDetails(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    
+    # Fetch manufacturer details
+    pipeline = [
+        {"$match": {"_id": ObjectId(manufacture_unit_id)}},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": {"$ifNull": ['$name', ""]},
+                "logo": {"$ifNull": ['$logo', ""]},
+                "location": {"$ifNull": ['$location', ""]},
+            }
+        },
+        {"$sort": {"id": -1}},
+    ]
+    manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    for ins in manufacture_unit_list:
+        industry_pipeline = [
+            {"$match": {"manufacture_unit_id_str": ins['id']}},
+            {
+                "$lookup": {
+                    "from": "industry",
+                    "localField": "industry_list",
+                    "foreignField": "_id",
+                    "as": "industry_ins",
+                }
+            },
+            {"$unwind": "$industry_ins"},
+            {
+                "$group": {
+                    "_id": None,
+                    "industry_list": {"$push": "$industry_ins.name"}
+                }
+            },
+        ]
+        obj = list(manufacture_unit_industry_config.objects.aggregate(*(industry_pipeline)))
+        ins['Industry Handled'] = ', '.join(obj[0]['industry_list'])
+        del ins["id"]
+    
+    manufacture_unit_Details_obj = manufacture_unit_list
+
+    # Fetch user details
+    user_pipeline = [
+        {"$match": {"manufacture_unit_id": ObjectId(manufacture_unit_id)}},
+        {
+            "$lookup": {
+                "from": "role",
+                "localField": "role_id",
+                "foreignField": "_id",
+                "as": "role_ins"
+            }
+        },
+        {"$unwind": {"path": "$role_ins"}},
+        {
+            "$lookup": {
+                "from": "address",
+                "localField": "default_address_id",
+                "foreignField": "_id",
+                "as": "address_ins"
+            }
+        },
+        {"$unwind": {"path": "$address_ins", "preserveNullAndEmptyArrays": True}},
+        {
+            "$project": {
+                "_id": 0,
+                "name": {"$concat": ["$first_name", {"$ifNull": ["$last_name", ""]}]},
+                "email": 1,
+                "mobile_number": {"$ifNull": ["$mobile_number", ""]},
+                "address": {
+                    "street": "$address_ins.street",
+                    "city": "$address_ins.city",
+                    "state": "$address_ins.state",
+                    "country": "$address_ins.country",
+                    "zipCode": "$address_ins.zipCode",
+                },
+            }
+        },
+    ]
+    total_dealer_list = list(user.objects.aggregate(*(user_pipeline)))
+
+    # Create an Excel workbook
+    wb = Workbook()
+
+    # Add manufacturer details to the first sheet
+    ws1 = wb.active
+    ws1.title = "Manufacturer Details"
+
+    # Add headers
+    ws1.append(["Name", "Logo", "Location", "Industry Handled"])
+
+    # Add manufacturer details
+    for detail in manufacture_unit_Details_obj:
+        name = detail.get("name", "")
+        logo_base64 = detail.get("logo", "")
+        location = detail.get("location", "")
+        industry_handled = detail.get("Industry Handled", "")
+
+        # Decode Base64 to image
+        image_stream = base64_to_image(logo_base64)
+        try:
+            image = PILImage.open(image_stream)
+            image_file = BytesIO()
+            image.save(image_file, format="PNG")  # Save as PNG
+            image_file.seek(0)
+
+            # Add image to Excel
+            excel_image = Image(image_file)
+            excel_image.width, excel_image.height = 100, 100  # Resize as needed
+            ws1.append([name])  # Add name first
+            ws1.add_image(excel_image, f"B{ws1.max_row}")  # Add image in the next column
+            ws1.cell(row=ws1.max_row, column=3).value = location
+            ws1.cell(row=ws1.max_row, column=4).value = industry_handled 
+        except:
+            ws1.append([name, "Invalid Logo", location, industry_handled])
+    
+    # Add user details to a new sheet
+    ws2 = wb.create_sheet(title="User Details")
+    ws2.append(["Name", "Email", "Mobile Number", "Address"])  # Add headers
+    for user_ins in total_dealer_list:
+        user_ins['address'] = stringify_dict(user_ins.get('address', {}))
+        ws2.append([user_ins["name"], user_ins["email"], user_ins["mobile_number"], user_ins['address']])
+
+    # Create a HttpResponse object with Excel content type
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="Manufacturer_User_Details.xlsx"'
+
+    # Save the Excel file to the response
+    with BytesIO() as buffer:
+        wb.save(buffer)
+        buffer.seek(0)
+        response.write(buffer.read())
+
+    return response

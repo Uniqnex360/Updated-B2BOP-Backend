@@ -221,6 +221,7 @@ class order(Document):
     updated_date = fields.DateTimeField(default=datetime.now())
     manufacture_unit_id_str = fields.StringField()
     is_reorder = fields.BooleanField(default=False)
+    industry_id_str = fields.StringField()
 
 
 
@@ -295,3 +296,7 @@ class manufacture_unit_industry_config(Document):
 class user_industry_config(Document):
     user_id_str = fields.StringField()
     allowed_industry_list = fields.ListField(fields.ReferenceField(industry),default=[])
+
+
+class ignore_calls(Document):
+    name = fields.StringField()

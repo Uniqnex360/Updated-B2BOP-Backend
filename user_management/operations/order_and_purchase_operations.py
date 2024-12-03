@@ -133,7 +133,7 @@ def totalCheckOutAmount(request):
     {
         "$project": {
             "_id": 0,
-            'total_amount': "$total_amount",
+            'total_amount': {"$round":["$total_amount",2]},
             'cart_count': "$cart_count" 
         }
         }
@@ -164,6 +164,7 @@ def obtainOrderList(request):
     delivery_status = json_request['delivery_status']
     fulfilled_status = json_request['fulfilled_status']
     payment_status = json_request['payment_status']
+    industry_id_str = json_request.get('industry_id')
 
     
     status_match = {}
@@ -174,6 +175,9 @@ def obtainOrderList(request):
         status_match['fulfilled_status'] = fulfilled_status
     if payment_status != "all":
         status_match['payment_status'] = payment_status
+    if industry_id_str != None:
+        status_match['industry_id_str'] = industry_id_str
+
 
     # print("status_match",status_match,"\n\n\n\n")
    
@@ -190,13 +194,7 @@ def obtainOrderList(request):
             }
         },
         {"$unwind" : "$user_ins"}]
-    if search_query != "":
-        search_obj = {
-            "$match" : {
-                "user_ins.first_name": {"$regex": search_query, "$options": "i"}
-            }
-        }
-        pipeline.append(search_obj)
+    
     if dealer_list != None and dealer_list != []:
         dealer_list = [ObjectId(ins) for ins in dealer_list]
         dealer_search_obj = {
@@ -273,6 +271,15 @@ def obtainOrderList(request):
            }
         }]
     pipeline.extend(project_obj)
+    if search_query != "":
+        search_obj = {
+            "$match" : { "$or" : [
+                                {"dealer_name": {"$regex": search_query, "$options": "i"}},
+                                {"order_id" : {"$regex": search_query, "$options": "i"}}
+                                ]
+            }
+        }
+        pipeline.append(search_obj)
 
     if sort_by != "":
         if sort_by == "amount":
@@ -310,7 +317,6 @@ def obtainOrderList(request):
     order_list = list(order.objects.aggregate(*(pipeline)))
     # print("order_list",len(order_list))
     return order_list
-
 
 
 @api_view(('GET', 'POST'))
@@ -476,6 +482,7 @@ def createOrder(request):
     amount = json_request['amount']
     currency = json_request['currency']
     shipping_address_id = json_request['shipping_address_id']
+    industry_id_str = json_request.get('industry_id')
 
     pipeline = [
         {
@@ -520,7 +527,10 @@ def createOrder(request):
 
     formatted_order_id = f"{order_id:04d}"
     order_items = [ObjectId(ins) for ins in order_items]
-    order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : order_items,"total_items" : len(order_items), "shipping_address_id" : shipping_address_obj.id})
+    if industry_id_str == None:
+        order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : order_items,"total_items" : len(order_items), "shipping_address_id" : shipping_address_obj.id})
+    else:
+        order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : order_items,"total_items" : len(order_items), "shipping_address_id" : shipping_address_obj.id,"industry_id_str" : industry_id_str})
 
     DatabaseModel.update_documents(user_cart_item.objects,{"id__in" : order_items},{"status" : "completed","updated_date" : datetime.now()})
     pipeline = [
