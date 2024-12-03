@@ -595,20 +595,6 @@ def obtainUserDetails(request):
             "preserveNullAndEmptyArrays": True
         }
     },
-    # {
-    #     "$lookup": {
-    #         "from": "address",  
-    #         "localField": "address_id_list",
-    #         "foreignField": "_id", 
-    #         "as": "other_address_ins" 
-    #     }
-    # },
-    # {
-    #     "$unwind": {
-    #         "path": "$other_address_ins", 
-    #         "preserveNullAndEmptyArrays": True
-    #     }
-    # },
     {
         "$project": {
             "_id": 0,
