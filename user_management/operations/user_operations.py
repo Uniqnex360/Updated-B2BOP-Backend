@@ -849,7 +849,7 @@ def obtainDealerDetails(request):
                 "sku_number" : "$products_ins.sku_number_product_code_item_number",
                 "mpn_number" : "$products_ins.mpn",
                 "brand_name" : "$products_ins.brand_name",
-                "price" : "$products_ins.list_price",
+                "price" : {"$ifNull" : ["$cart_ins.unit_price",0.0]},
                 "currency" : "$products_ins.currency",
                 "quantity" : "$cart_ins.quantity",
                 "total_price" : "$cart_ins.price"

@@ -40,9 +40,10 @@ def createOrUpdateUserCartItem(request):
     user_cart_item_obj = list(user_cart_item.objects.aggregate(*(pipeline)))
     if user_cart_item_obj != []:
         price = (user_cart_item_obj[0]['quantity'] + json_request['quantity']) * json_request['price']
-        DatabaseModel.update_documents(user_cart_item.objects,{"id" : user_cart_item_obj[0]['_id']},{"inc__quantity" : json_request['quantity'],"price" : price})
+        DatabaseModel.update_documents(user_cart_item.objects,{"id" : user_cart_item_obj[0]['_id']},{"inc__quantity" : json_request['quantity'],"price" : price,"unit_price" : json_request['price']})
         data['is_updated'] = True
     else:
+        json_request['unit_price'] = json_request['price']
         json_request['price'] = json_request['price'] * json_request['quantity']
         user_cart_item(**json_request).save()
         data['is_created'] = True
@@ -76,7 +77,7 @@ def obtainUserCartItemList(request):
                 "product_id" : {"$toString" : "$products_ins._id"},
                 "name" : "$products_ins.product_name",
                 "description" : "$products_ins.long_description",
-                "price" : "$products_ins.list_price",
+                "price" : {"$ifNull" : ["$unit_price",0.0]},
                 "currency" : "$products_ins.currency",
                 "primary_image" : {"$first":"$products_ins.images"},
                 "sku_number" : "$products_ins.sku_number_product_code_item_number",
@@ -106,8 +107,9 @@ def updateOrDeleteUserCartItem(request):
     else:
         for cart_ins in json_request['cart_list']:
             cart_obj = DatabaseModel.get_document(user_cart_item.objects,{"id" : cart_ins['id']},['product_id','quantity'])
-            updated_price = (cart_obj.product_id.list_price) * cart_ins['quantity']
-            DatabaseModel.update_documents(user_cart_item.objects,{"id" : cart_ins['id']},{"price" : updated_price,"quantity" : cart_ins['quantity']})
+            unit_price = cart_obj.product_id.list_price
+            updated_price = (unit_price) * cart_ins['quantity']
+            DatabaseModel.update_documents(user_cart_item.objects,{"id" : cart_ins['id']},{"price" : updated_price,"quantity" : cart_ins['quantity'],"unit_price" : unit_price})
 
         data['is_updated'] = True
     return data
@@ -1053,7 +1055,7 @@ def getorderDetails(request):
                 "sku_number" : "$products_ins.sku_number_product_code_item_number",
                 "mpn_number" : "$products_ins.mpn",
                 "brand_name" : "$products_ins.brand_name",
-                "price" : "$products_ins.list_price",
+                "price" : {"$ifNull" : ["$unit_price",0.0]},
                 "currency" : "$products_ins.currency",
                 "quantity" : 1,
                 "total_price" : "$price"
