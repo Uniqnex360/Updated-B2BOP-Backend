@@ -654,20 +654,6 @@ def obtainOrderListForDealer(request):
     sort_by_value = request.GET.get('sort_by_value')
     pipeline = [
     {"$match": {"customer_id": ObjectId(user_id)}},  
-    # {
-    #     "$lookup": {
-    #         "from": "address",  
-    #         "localField": "default_address_id",  
-    #         "foreignField": "_id",  
-    #         "as": "address_ins"  
-    #     }
-    # },
-    # {
-    #     "$unwind": {
-    #         "path": "$address_ins",
-    #         "preserveNullAndEmptyArrays": True
-    #     }
-    # },
     {
         "$project": {
             "_id": 0,
@@ -680,44 +666,10 @@ def obtainOrderListForDealer(request):
             "payment_status" : 1,
             "amount" : 1,
             "currency" :1
-            # "email": 1, 
-            # "mobile_number": 1,
-            # "manufacture_unit_id" : {"$toString" : "$manufacture_unit_id"},
-            # "address": {
-            #     "address_id" : {"$toString" : "$address_ins._id"},
-            #     "street": "$address_ins.street",
-            #     "city": "$address_ins.city",
-            #     "state": "$address_ins.state",
-            #     "country": "$address_ins.country",
-            #     "zipCode": "$address_ins.zipCode"
-            # },
-            # "other_address": {
-            #     "$cond": {
-            #         "if": {
-            #             "$gt": [
-            #                 {"$size": {"$ifNull": ["$other_address_ins", []]}},
-            #                 0
-            #             ]
-            #         },
-            #         "then": {
-            #             "address_id" : {"$toString" : "$other_address_ins._id"},
-            #             "street": "$other_address_ins.street",
-            #             "city": "$other_address_ins.city",
-            #             "state": "$other_address_ins.state",
-            #             "country": "$other_address_ins.country",
-            #             "zipCode": "$other_address_ins.zipCode"
-            #         },
-            #         "else": [] 
-            #     }
-            # }
         }
     }
     ]
     if sort_by != None and sort_by != "":
-        if sort_by == "price":
-            sort_by = "list_price"
-        # elif sort_by == "end_level_category":
-        #     sort_by = "product_category_ins.name"
         pipeline2 = {
                 "$sort": {
                     sort_by: int(sort_by_value)
