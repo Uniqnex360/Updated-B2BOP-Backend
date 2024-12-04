@@ -382,13 +382,14 @@ def obtainDealerlist(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     sort_by = request.GET.get('sort_by')
     sort_by_value = request.GET.get('sort_by_value')
+    dealer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "dealer_admin"},['id']).id
 
     
     pipeline = [
         {
             "$match" : {
                 "manufacture_unit_id" : ObjectId(manufacture_unit_id),
-                "role_id" : ObjectId('670e3c616569d56ed4d4a75b'),
+                "role_id" : dealer_admin_role_id,
             }
         },
         {
@@ -416,9 +417,9 @@ def obtainDealerlist(request):
                     { "$ifNull": ["$last_name", ""] } 
                 ]
                 },
-                "email" : 1,
-                "mobile_number" : 1,
-                "company_name" : 1,
+                "email" : {"$ifNull":["$email",""]},
+                "mobile_number" : {"$ifNull":["$mobile_number",""]},
+                "company_name" : {"$ifNull":["$company_name",""]},
                 "address" : {
                     "street" : "$address_ins.street",
                     "city" : "$address_ins.city",
@@ -426,7 +427,7 @@ def obtainDealerlist(request):
                     "country" : "$address_ins.country",
                     "zipCode" : "$address_ins.zipCode"
                 },
-                "website" : "www.google.com",
+                "website" : {"$ifNull":["$website",""]},
                 "no_of_orders" : "5"
            }
         }
@@ -633,13 +634,29 @@ def obtainUserDetails(request):
         data['user_obj'] = {}
     return data
 
-
+@csrf_exempt
 def obtainOrderListForDealer(request):
-    user_id = request.GET.get('user_id')
-    sort_by = request.GET.get('sort_by')
-    sort_by_value = request.GET.get('sort_by_value')
+    json_request = JSONParser().parse(request)
+
+    user_id = json_request.get('user_id')
+    sort_by = json_request.get('sort_by')
+    sort_by_value = json_request.get('sort_by_value')
+
+    delivery_status = json_request['delivery_status']
+    fulfilled_status = json_request['fulfilled_status']
+    payment_status = json_request['payment_status']
+
+    status_match = {}
+    status_match['customer_id'] = ObjectId(user_id)
+    if delivery_status != "all":
+        status_match['delivery_status'] = delivery_status
+    if fulfilled_status != "all":
+        status_match['fulfilled_status'] = fulfilled_status
+    if payment_status != "all":
+        status_match['payment_status'] = payment_status
+
     pipeline = [
-    {"$match": {"customer_id": ObjectId(user_id)}},  
+    {"$match": status_match},  
     {
         "$project": {
             "_id": 0,
@@ -1216,3 +1233,15 @@ def createOrUpdateTopSellings(order_id):
         top_selling_category_id = createOrUpdateTopSellingCategory(top_selling_product_id, top_selling_brand_id, ins['category_id'], ins['category_name'], ins['quantity'], ins['total_price'],ins['manufacture_unit_id'])
 
     return True
+
+
+@csrf_exempt
+def updateOrder(request):
+    json_request = JSONParser().parse(request)
+    data = dict()
+    data['is_updated'] = False
+    order_obj = DatabaseModel.get_document(order.objects,{"id" : json_request['update_onj']['id']},['id'])
+    if order_obj != None:
+        del json_request['update_onj']['id']
+        data['is_updated'] = DatabaseModel.update_documents(order.objects,{"id" : order_obj.id},json_request['update_onj'])
+    return data

@@ -111,7 +111,7 @@ def obtainProductCategoryListForDealer(request):
     match = dict()
     match['manufacture_unit_id_str'] = manufacture_unit_id
     match['end_level'] = True
-    if industry_id_str != None:
+    if industry_id_str != None and industry_id_str != "":
         match['industry_id_str'] = industry_id_str
     pipeline =[
         {
@@ -191,7 +191,7 @@ def obtainProductsList(request):
                 "_id":0,
                 "id" : {"$toString" : "$_id"},
                 "product_name" : "$product_name",
-                "logo" : {"$first":"$images"},
+                "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
                 "sku_number_product_code_item_number" : "$sku_number_product_code_item_number",
                 "mpn" : 1,
                 "msrp" : {"$round":["$msrp",2]},
@@ -271,7 +271,7 @@ def obtainProductsList(request):
                 "_id": 0,
                 "id": {"$toString": "$product_ins._id"},
                 "product_name": "$product_ins.product_name",
-                "logo": {"$first": "$product_ins.images"},
+                "logo": {"$ifNull" : [{"$first": "$product_ins.images"},"http://example.com/"]},
                 "sku_number_product_code_item_number": "$product_ins.sku_number_product_code_item_number",
                 "mpn": "$product_ins.mpn",
                 "msrp": {"$round":["$product_ins.msrp",2]},
@@ -312,12 +312,12 @@ def obtainProductsListForDealer(request):
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
     match['visible'] = True
 
-    if product_category_id != None:
+    if product_category_id != "":
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all" and filters != "":
         match['availability'] = True if filters == "true" else False
 
-    if product_category_id == None:
+    if product_category_id == "":
         pipeline =[
             {
                 "$match" : match
@@ -350,7 +350,7 @@ def obtainProductsListForDealer(request):
                 "_id":0,
                 "id" : {"$toString" : "$_id"},
                 "name" : "$product_name",
-                "logo" : {"$first":"$images"},
+                "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
                 "sku_number" : "$sku_number_product_code_item_number",
                 "mpn" : 1,
                 "msrp" : {"$round" : ["$msrp",2]},
@@ -387,7 +387,7 @@ def obtainProductsListForDealer(request):
             pipeline.extend(pipeline2)
         product_list = list(product.objects.aggregate(*(pipeline)))
 
-    elif product_category_id != None:
+    elif product_category_id != "":
         match = {}
         match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
         match['product_ins.visible'] = True
@@ -399,32 +399,32 @@ def obtainProductsListForDealer(request):
                 "_id": ObjectId(product_category_id)
             }
         },
-        {
-            "$graphLookup": {
-                "from": "product_category",
-                "startWith": "$_id",
-                "connectFromField": "_id",
-                "connectToField": "parent_category_id",
-                "as": "all_categories",
-                "maxDepth": 5
-            }
-        },
-        {
-            "$project": {
-                "category_ids": {
-                    "$map": {
-                        "input": "$all_categories",
-                        "as": "category",
-                        "in": "$$category._id"
-                    }
-                }
-            }
-        },
-        {"$unwind": "$category_ids"},
+        # {
+        #     "$graphLookup": {
+        #         "from": "product_category",
+        #         "startWith": "$_id",
+        #         "connectFromField": "_id",
+        #         "connectToField": "parent_category_id",
+        #         "as": "all_categories",
+        #         "maxDepth": 5
+        #     }
+        # },
+        # {
+        #     "$project": {
+        #         "category_ids": {
+        #             "$map": {
+        #                 "input": "$all_categories",
+        #                 "as": "category",
+        #                 "in": "$$category._id"
+        #             }
+        #         }
+        #     }
+        # },
+        # {"$unwind": "$category_ids"},
         {
             "$lookup": {
                 "from": "product",
-                "localField": "category_ids",
+                "localField": "_id",
                 "foreignField": "category_id",
                 "as": "product_ins"
             }
@@ -433,20 +433,20 @@ def obtainProductsListForDealer(request):
         {
                 "$match" : match
         },
-        {
-            "$lookup": {
-                "from": "product_category",
-                "localField": "product_ins.category_id",
-                "foreignField": "_id",
-                "as": "product_category_ins"
-            }
-        },
-        {"$unwind": "$product_category_ins"},
-         {
-            "$addFields": {
-                "end_level_category": "$product_category_ins.name"
-            }
-        },
+        # {
+        #     "$lookup": {
+        #         "from": "product_category",
+        #         "localField": "product_ins.category_id",
+        #         "foreignField": "_id",
+        #         "as": "product_category_ins"
+        #     }
+        # },
+        # {"$unwind": "$product_category_ins"},
+        #  {
+        #     "$addFields": {
+        #         "end_level_category": "$product_category_ins.name"
+        #     }
+        # },
         {
             "$lookup": {
                 "from": "brand",
@@ -461,14 +461,14 @@ def obtainProductsListForDealer(request):
                 "_id": 0,
                 "id": {"$toString": "$product_ins._id"},
                 "name": "$product_ins.product_name",
-                "logo": {"$first": "$product_ins.images"},
+                "logo": {"$ifNull" : [{"$first": "$product_ins.images"},"http://example.com/"]},
                 "sku_number": "$product_ins.sku_number_product_code_item_number",
                 "mpn": "$product_ins.mpn",
                 "msrp": {"$round":["$product_ins.msrp",2]},
                 "was_price": {"$round":["$product_ins.was_price",2]},
                 "brand_name": "$product_ins.brand_name",
                 "visible": "$product_ins.visible",
-                "end_level_category": 1,
+                "end_level_category": "$name",
                 "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
                 "price": {"$round":["$product_ins.list_price",2]},
                 "currency": "$product_ins.currency",
@@ -504,12 +504,12 @@ def productCountForDealer(request):
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
     match['visible'] = True
 
-    if product_category_id != None:
+    if product_category_id != None and product_category_id != "":
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all":
         match['availability'] = True if filters == "true" else False
     
-    if product_category_id == None:
+    if product_category_id == "":
 
         count_pipeline = [
             {
@@ -523,7 +523,7 @@ def productCountForDealer(request):
         # Execute the count pipeline to get the total count
         total_count_result = list(product.objects.aggregate(*(count_pipeline)))
         total_count = total_count_result[0]['total_count'] if total_count_result else 0
-    elif product_category_id != None:
+    elif product_category_id != None and product_category_id != "":
         match = {}
         match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
         match['product_ins.visible'] = True
@@ -611,7 +611,7 @@ def obtainProductDetails(request):
             "model" : 1,
             "mpn" : 1,
             "upc_ean" : 1,
-            "logo" : {"$first":"$images"},
+            "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
             "long_description" : 1,
             "short_description" : 1,
             "list_price" : 1,
@@ -1183,9 +1183,14 @@ def save_file(request):
 @csrf_exempt
 def productSearch(request):
     json_request = JSONParser().parse(request)
-    search_query = json_request['search_query']
+    search_query = re.escape(json_request['search_query'])
+    # search_query = json_request['search_query']
     manufacture_unit_id = json_request['manufacture_unit_id']
     role_name = json_request.get('role_name')
+    sort_by = json_request.get("sort_by")
+    sort_by_value = json_request.get("sort_by_value")
+    skip = json_request.get("skip")
+    limit = json_request.get("limit")
 
     match = dict()
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -1232,11 +1237,10 @@ def productSearch(request):
                     {"mpn": {"$regex": search_query, "$options": "i"}},
                     {"model": {"$regex": search_query, "$options": "i"}},
                     {"upc_ean": {"$regex": search_query, "$options": "i"}},
-                    {"product_name": {"$regex": search_query, "$options": "i"}},
+                    {"product_name": {"$regex": f'^{search_query}$', "$options": "i"}},
                     # {"brand_info.name": {"$regex": search_query, "$options": "i"}},
                     {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
                     {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}},
-                    
                     {
                         "$expr": {
                             "$gt": [
@@ -1346,7 +1350,7 @@ def productSearch(request):
                 "id" : {"$toString" : "$_id"},
                 "name" : "$product_name",
                 "product_name" : "$product_name",
-                "logo" : {"$first":"$images"},
+                "logo" : {"$ifNull" : [{"$first": "$images"},"http://example.com/"]},
                 "sku_number_product_code_item_number" : "$sku_number_product_code_item_number",
                 "sku_number" : "$sku_number_product_code_item_number",
                 "mpn" : 1,
@@ -1366,9 +1370,23 @@ def productSearch(request):
         # {"$skip": 0},
         # {"$limit": 10}
     ]
+    if sort_by != None and sort_by != "":
+        pipeline2 = [{
+                "$sort": {
+                    sort_by: int(sort_by_value)
+                }
+            },
+            {
+                "$skip": skip
+            },
+            {
+                "$limit": limit
+            }]
+        pipeline.extend(pipeline2)
     
     results = list(product.objects.aggregate(pipeline))
     return results
+
 
 
 def getProductsByTopLevelCategory(request):

@@ -50,7 +50,7 @@ class manufacture_unit(Document):
     industry = fields.StringField()
 
 class user(Document):
-    dealer_id = fields.IntField(default=random.randint(100000,999999))
+    dealer_id = fields.IntField(default=None)
     first_name = fields.StringField()
     last_name = fields.StringField()
     username = fields.StringField(required=True)
@@ -69,6 +69,16 @@ class user(Document):
     bank_details_id_list = fields.ListField(fields.ReferenceField(bank_details),default=[])
     ware_house_id_list = fields.ListField(fields.ReferenceField(address),default=[])
     website = fields.StringField()
+
+    def clean(self):
+        # Ensure unique dealer_id
+        if not self.dealer_id:
+            while True:
+                candidate_id = random.randint(100000, 999999)
+                if not user.objects(dealer_id=candidate_id):
+                    self.dealer_id = candidate_id
+                    break
+        super().clean()
 
 
 # class product_category(Document):
