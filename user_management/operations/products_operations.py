@@ -301,6 +301,7 @@ def obtainProductsList(request):
 def obtainProductsListForDealer(request):
     product_category_id = request.GET.get('product_category_id')
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    industry_id_str = request.GET.get('industry_id')
     skip = int(request.GET.get("skip")) -1
     limit = int(request.GET.get("limit"))
 
@@ -316,6 +317,8 @@ def obtainProductsListForDealer(request):
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all" and filters != "":
         match['availability'] = True if filters == "true" else False
+    if industry_id_str != None and industry_id_str != "":
+        match['industry_id_str'] = industry_id_str
 
     if product_category_id == "":
         pipeline =[
@@ -369,10 +372,6 @@ def obtainProductsListForDealer(request):
             
         ]
         if sort_by != None and sort_by != "":
-            # if sort_by == "price":
-            #     sort_by = "list_price"
-            # elif sort_by == "end_level_category":
-            #     sort_by = "product_category_ins.name"
             pipeline2 = [{
                     "$sort": {
                         sort_by: int(sort_by_value)
@@ -826,7 +825,7 @@ def upload_file(request):
                     error_dict['error'].append(f"Long Description Should be present")
 
 
-            elif pd.notnull(row_dict[j]) and fields_list[j] == 'shortdescription':
+            elif pd.notnull(row_dict[j]) and fields_list[j] == 'short description':
                 try:
                     data_list = ast.literal_eval(row_dict[j])
                     result = ', '.join(data_list)
