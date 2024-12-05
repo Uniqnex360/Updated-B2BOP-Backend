@@ -1377,7 +1377,7 @@ def productSearch(request):
                 }
             },
             {
-                "$skip": skip
+                "$skip": skip-1
             },
             {
                 "$limit": limit
