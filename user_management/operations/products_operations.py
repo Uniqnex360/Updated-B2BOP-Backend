@@ -815,7 +815,7 @@ def upload_file(request):
 
             elif fields_list[j] == 'productName':
                 if pd.notnull(row_dict[j]):
-                    xl_dict['product_obj']['product_name'] = str(row_dict[j])
+                    xl_dict['product_obj']['product_name'] = str(row_dict[j]).replace('"',"")
                 else:
                     error_dict['error'].append(f"Product Name Should be present") 
 
