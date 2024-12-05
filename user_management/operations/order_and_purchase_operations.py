@@ -249,7 +249,7 @@ def obtainOrderList(request):
                 "_id": 0,
                 "_id" : {"$toString" : "$_id"},
                 "order_id" : 1,
-                "dealer_name" : {"$concat":["$user_ins.first_name",{"$ifNull" : ["$user_ins.last_name",""]}]},
+                "dealer_name" : {"$concat":["$user_ins.first_name"," ",{"$ifNull" : ["$user_ins.last_name",""]}]},
                 "total_items" : 1,
                 "amount" : {"$concat": [{"$toString": "$amount"},"$currency"]},
                 "shipping_service" : "-",
@@ -350,18 +350,20 @@ def exportOrders(request):
         {
            "$project" :{
                 "_id": 0,
-                "order_id" : {"$toString" : "$_id"},
-                "dealer_anme" : "$user_ins.username",
-                "order_value" : {"$concat": [{"$toString": "$amount"},"$currency"]},
-                "shipping_service" : "-",
-                "tracking_code" : "-",
-                "order_date": {
+                "#Order Id" : {"$toString" : "$_id"},
+                "Dealer Name" : {"$concat": ["$first_name"," ",{"$ifNull":["$last_name",""]}]},
+                "Order Value" : {"$concat": [{"$toString": "$amount"},"$currency"]},
+                "Shipping Service" : "-",
+                "Tracking Code" : "-",
+                "Order Date": {
                     "$dateToString": {
                         "format": "%Y-%m-%dT%H:%M:%S.%LZ",
                         "date": "$creation_date",
                     }
                     },
-                "status" : 1
+                "Delivery Status" : "$delivery_status",
+                "Fulfilled Status" : "$fulfilled_status",
+                "Payment Status" : "$payment_status"
            }
         }
     ]
@@ -413,7 +415,7 @@ def obtainDealerlist(request):
                 "dealer_id" : 1,
                 "username" :  {
                 "$concat": [
-                    "$first_name",
+                    "$first_name", " ",
                     { "$ifNull": ["$last_name", ""] } 
                 ]
                 },
@@ -602,7 +604,7 @@ def obtainUserDetails(request):
             "id": {"$toString": "$_id"},
             "username": {
                 "$concat": [
-                    "$first_name",  
+                    "$first_name", " ",
                     {"$ifNull": ["$last_name", ""]}  
                 ]
             },
@@ -921,7 +923,7 @@ def getorderDetails(request):
             },
             "name": {
                 "$concat": [
-                    "$user_ins.first_name",  
+                    "$user_ins.first_name", " ", 
                     {"$ifNull": ["$user_ins.last_name", ""]}  
                 ]
             },
@@ -1045,7 +1047,7 @@ def acceptOrRejectOrder(request):
                 "_id": 0,
                 "name" : {
                 "$concat": [
-                    "$first_name",
+                    "$first_name", " ",
                     { "$ifNull": ["$last_name", ""] } 
                 ]
                 },
@@ -1081,7 +1083,7 @@ def acceptOrRejectOrder(request):
                 "order_id" : "$order_id",
                 "name" : {
                 "$concat": [
-                    "$user_ins.first_name",
+                    "$user_ins.first_name", " ",
                     { "$ifNull": ["$user_ins.last_name", ""] } 
                 ]
                 },
