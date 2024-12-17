@@ -280,10 +280,17 @@ def obtainUserListForManufactureUnit(request):
             "_id": 0,
             'id': {"$toString": "$_id"},
             "username": {
-                "$concat": [
-                    "$first_name",
-                    { "$ifNull": ["$last_name", ""] }
-                ]
+            "$concat": [
+                "$first_name",
+                { 
+                "$cond": {
+                    "if": { "$ne": ["$last_name", None] },  
+                    "then": " ",                             
+                    "else": ""                               
+                }
+                },
+                { "$ifNull": ["$last_name", ""] }        
+            ]
             },
             "email": 1,
             "mobile_number": 1,
@@ -1103,7 +1110,19 @@ def manufactureDashboardEachDealerOrderValue(request):
         "$project" : {
             "_id" : 0,
             "id" : {"$toString" : "$_id"},
-            "name" : {"$concat" : ["$first_name",{"$ifNull" : ["$last_anme",""]}]}
+            "name" : {
+            "$concat": [
+                "$first_name",
+                { 
+                "$cond": {
+                    "if": { "$ne": ["$last_name", None] },  
+                    "then": " ",                             
+                    "else": ""                               
+                }
+                },
+                { "$ifNull": ["$last_name", ""] }        
+            ]
+            },
         }
     }
     ]
@@ -1589,7 +1608,19 @@ def exportAllManufacturerDetailsandUserDetails(request):
         {
             "$project": {
                 "_id": 0,
-                "name": {"$concat": ["$first_name", {"$ifNull": ["$last_name", ""]}]},
+                "name": {
+                "$concat": [
+                    "$first_name",
+                    { 
+                    "$cond": {
+                        "if": { "$ne": ["$last_name", None] },  
+                        "then": " ",                             
+                        "else": ""                               
+                    }
+                    },
+                    { "$ifNull": ["$last_name", ""] }        
+                ]
+            },
                 "email": 1,
                 "mobile_number": {"$ifNull": ["$mobile_number", ""]},
                 "address": {

@@ -249,7 +249,19 @@ def obtainOrderList(request):
                 "_id": 0,
                 "_id" : {"$toString" : "$_id"},
                 "order_id" : 1,
-                "dealer_name" : {"$concat":["$user_ins.first_name"," ",{"$ifNull" : ["$user_ins.last_name",""]}]},
+                "dealer_name" : {
+                    "$concat": [
+                        "$user_ins.first_name",
+                        { 
+                        "$cond": {
+                            "if": { "$ne": ["$user_ins.last_name", None] },  
+                            "then": " ",                             
+                            "else": ""                               
+                        }
+                        },
+                        { "$ifNull": ["$user_ins.last_name", ""] }        
+                        ]
+                },
                 "total_items" : 1,
                 "amount" : {"$concat": [{"$toString": "$amount"},"$currency"]},
                 "shipping_service" : "-",
@@ -351,7 +363,19 @@ def exportOrders(request):
            "$project" :{
                 "_id": 0,
                 "#Order Id" : {"$toString" : "$_id"},
-                "Dealer Name" : {"$concat": ["$first_name"," ",{"$ifNull":["$last_name",""]}]},
+                "Dealer Name" : {
+                    "$concat": [
+                        "$user_ins.first_name",
+                        { 
+                        "$cond": {
+                            "if": { "$ne": ["$user_ins.last_name", None] },  
+                            "then": " ",                             
+                            "else": ""                               
+                        }
+                        },
+                        { "$ifNull": ["$user_ins.last_name", ""] }        
+                    ]
+                },
                 "Order Value" : {"$concat": [{"$toString": "$amount"},"$currency"]},
                 "Shipping Service" : "-",
                 "Tracking Code" : "-",
@@ -415,8 +439,15 @@ def obtainDealerlist(request):
                 "dealer_id" : 1,
                 "username" :  {
                 "$concat": [
-                    "$first_name", " ",
-                    { "$ifNull": ["$last_name", ""] } 
+                    "$first_name",
+                    { 
+                    "$cond": {
+                        "if": { "$ne": ["$last_name", None] },  
+                        "then": " ",                             
+                        "else": ""                               
+                    }
+                    },
+                    { "$ifNull": ["$last_name", ""] }        
                 ]
                 },
                 "email" : {"$ifNull":["$email",""]},
@@ -604,8 +635,15 @@ def obtainUserDetails(request):
             "id": {"$toString": "$_id"},
             "username": {
                 "$concat": [
-                    "$first_name", " ",
-                    {"$ifNull": ["$last_name", ""]}  
+                    "$first_name",
+                    { 
+                    "$cond": {
+                        "if": { "$ne": ["$last_name", None] },  
+                        "then": " ",                             
+                        "else": ""                               
+                    }
+                    },
+                    { "$ifNull": ["$last_name", ""] }        
                 ]
             },
             "email": 1, 
@@ -922,13 +960,21 @@ def getorderDetails(request):
                 "zipCode": "$shipping_address_ins.zipCode"
             },
             "name": {
-                "$concat": [
-                    "$user_ins.first_name", " ", 
-                    {"$ifNull": ["$user_ins.last_name", ""]}  
-                ]
+            "$concat": [
+                "$user_ins.first_name",
+                { 
+                "$cond": {
+                    "if": { "$ne": ["$user_ins.last_name", None] },  
+                    "then": " ",                             
+                    "else": ""                               
+                }
+                },
+                { "$ifNull": ["$user_ins.last_name", ""] }
+            ]
             },
             "email": "$user_ins.email",
             "mobile_number": {"$ifNull": ["$user_ins.mobile_number",""]},
+            "profile_image" : {"$ifNull" : ['$user_ins.profile_image',""]}
         }
         }
     
@@ -1021,7 +1067,30 @@ def getorderDetails(request):
     ]
     user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
     order_obj[0]['product_list'] = user_cart_item_list
+    transaction_list = list()
+    if order_obj[0]['payment_status'] != "Pending":
+        pipeline =[
+        {
+            "$match" : {
+                "order_id" : ObjectId(order_id)
+            }
+        },
+        {
+        "$project" :{
+                "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "status" : 1,
+                "payment_proof" : 1,
+                "transaction_date" : 1,
+                "updated_date" : 1,
+                "message" : {"$ifNull" : ["$message",""]},
+                "transaction_id" : 1
+        }
+        }
+        ]
+        transaction_list = list(transaction.objects.aggregate(*(pipeline)))
 
+    order_obj[0]['transaction_list'] = transaction_list
     del order_obj[0]['order_items']
 
     data['order_obj'] = order_obj[0]
@@ -1047,8 +1116,15 @@ def acceptOrRejectOrder(request):
                 "_id": 0,
                 "name" : {
                 "$concat": [
-                    "$first_name", " ",
-                    { "$ifNull": ["$last_name", ""] } 
+                    "$first_name",
+                    { 
+                    "$cond": {
+                        "if": { "$ne": ["$last_name", None] },  
+                        "then": " ",                             
+                        "else": ""                               
+                    }
+                    },
+                    { "$ifNull": ["$last_name", ""] }        
                 ]
                 },
                 "email" : "$email",
@@ -1081,10 +1157,18 @@ def acceptOrRejectOrder(request):
         "$project" :{
                 "_id": 0,
                 "order_id" : "$order_id",
+                "creation_date" : "$creation_date",
                 "name" : {
                 "$concat": [
-                    "$user_ins.first_name", " ",
-                    { "$ifNull": ["$user_ins.last_name", ""] } 
+                    "$user_ins.first_name",
+                    { 
+                    "$cond": {
+                        "if": { "$ne": ["$user_ins.last_name", None] },  
+                        "then": " ",                             
+                        "else": ""                               
+                    }
+                    },
+                    { "$ifNull": ["$user_ins.last_name", ""] }        
                 ]
                 },
                 "email" : "$user_ins.email",
@@ -1093,6 +1177,24 @@ def acceptOrRejectOrder(request):
         }
     ]
     order_user_obj = list(order.objects.aggregate(*(pipeline)))
+    transaction_pipeline =[
+        {
+            "$match" : {
+                "order_id" : ObjectId(order_id)
+            }
+        },
+        {
+        "$project" :{
+                "_id": 1,
+        }
+        },
+        {
+            "$sort" : {
+                "_id" : -1
+            }
+        }
+    ]
+    transaction_obj = list(transaction.objects.aggregate(*(transaction_pipeline)))
     if status == "accept":
         
         # Start a new thread to call createOrUpdateTopSellings
@@ -1106,7 +1208,11 @@ def acceptOrRejectOrder(request):
 
         body = payment_confirmation_obj.default_template.format(order_id=order_user_obj[0]['order_id'],dealer_name=order_user_obj[0]['name'],amount=order_user_obj[0]['amount'],date=getLocalTime(datetime.now()),your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
         
-    else:
+        DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : payment_status,"updated_date" : datetime.now()})
+
+        DatabaseModel.update_documents(transaction.objects,{"id" : transaction_obj[0]['_id']},{"status" : payment_status,"updated_date" : datetime.now()})
+        
+    elif status == "reject":
         payment_status = "Failed"
 
         payment_rejection_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "payment_rejection","manufacture_unit_id_str" : admin_user_obj[0]['manufacture_unit_id']})
@@ -1115,11 +1221,32 @@ def acceptOrRejectOrder(request):
 
         body = payment_rejection_obj.default_template.format(order_id=order_user_obj[0]['order_id'],dealer_name=order_user_obj[0]['name'],your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
 
+        DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : payment_status,"updated_date" : datetime.now()})
+        DatabaseModel.update_documents(transaction.objects,{"id" : transaction_obj[0]['_id']},{"status" : payment_status,"updated_date" : datetime.now()})
+
+    elif status == "fulfilled" or status == "unfulfilled" or status == "partially fulfilled":
+        if status == "fulfilled":
+            fulfilled_status = "Fulfilled"
+            status_message_obj = DatabaseModel.get_document(status_message.objects,{"code" : "fulfilled"},['message']).message
+        elif status == "fulfilled":
+            fulfilled_status = "Unfulfilled"
+            status_message_obj = DatabaseModel.get_document(status_message.objects,{"code" : "unfulfilled"},['message']).message
+        elif status == "fulfilled":
+            fulfilled_status = "Partially Fulfilled"
+            status_message_obj = DatabaseModel.get_document(status_message.objects,{"code" : "partially_fulfilled"},['message']).message   
+
+        fullfillment_status_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "fulfillment_status"})
+
+        subject = fullfillment_status_obj.subject.format(order_id=order_user_obj[0]['order_id'])
+
+        body = fullfillment_status_obj.default_template.format(order_id=order_user_obj[0]['order_id'],dealer_name=order_user_obj[0]['name'],order_date=getLocalTime(order_user_obj[0]['creation_date']),fulfillment_status = fulfilled_status,status_message = status_message_obj, your_company_name=admin_user_obj[0]['company_name'],your_mobile_number=admin_user_obj[0]['mobile_number'],your_name=admin_user_obj[0]['name'],your_mail=admin_user_obj[0]['email'])
+
+        DatabaseModel.update_documents(order.objects,{"id" : order_id},{"fulfilled_status" : fulfilled_status,"updated_date" : datetime.now()})
+
     send_email(order_user_obj[0]['email'], subject, body)
 
 
     
-    DatabaseModel.update_documents(order.objects,{"id" : order_id},{"payment_status" : payment_status,"updated_date" : datetime.now()})
     data['is_action'] = "Mail sended SuccessFully"
     return data
 
@@ -1236,14 +1363,83 @@ def createOrUpdateTopSellings(order_id):
 
     return True
 
-
 @csrf_exempt
-def updateOrder(request):
-    json_request = JSONParser().parse(request)
+def createWishList(request):
     data = dict()
-    data['is_updated'] = False
-    order_obj = DatabaseModel.get_document(order.objects,{"id" : json_request['update_onj']['id']},['id'])
-    if order_obj != None:
-        del json_request['update_onj']['id']
-        data['is_updated'] = DatabaseModel.update_documents(order.objects,{"id" : order_obj.id},json_request['update_onj'])
+    json_request = JSONParser().parse(request)
+    user_id = json_request.get('user_id')
+    product_id = json_request.get('product_id')
+
+    Wishlist_obj = DatabaseModel.get_document(wishlist.objects,{"user_id" : ObjectId(user_id),"product_id" : ObjectId(product_id)},['id'])
+    if Wishlist_obj != None:
+        DatabaseModel.save_documents(wishlist,{"user_id" : ObjectId(user_id), "product_id" : ObjectId(product_id)})
+        data['is_created'] = True
+    else:
+        DatabaseModel.update_documents(wishlist.objects,{"id":Wishlist_obj.id},{"updated_at" : datetime.now()})
+        data['is_updated'] = True
+
     return data
+
+
+def deleteWishlist(request):
+    data = dict()
+    wish_list_id = request.GET.get('wish_list_id')
+    DatabaseModel.delete_documents(wishlist.objects,{"id" : wish_list_id})
+    data['is_deleted'] = True
+    return data
+
+
+def obtainWishlistForBuyer(request):
+    user_id = request.GET.get('user_id')
+    pipeline = [
+        {
+            "$match" : {
+                "user_id" : ObjectId(user_id)
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "product",
+                "localField" : "product_id",
+                "foreignField" : "_id",
+                "as" : "product_ins"
+            }
+        },
+        {"$unwind" : "$product_ins"},
+        {
+           "$project" :{
+                "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "product_id" : {"$toString" : "$product_ins._id"},
+                "name" : "$product_ins.product_name",
+                "price" : {"$ifNull" : ["$product_ins.list_price",0.0]},
+                "currency" : "$product_ins.currency",
+                "primary_image" : {"$first":"$product_ins.images"},
+                "sku_number" : "$product_ins.sku_number_product_code_item_number",
+                "mpn_number" : "$product_ins.mpn",
+                "brand_name" : "$product_ins.brand_name"
+           }
+        }
+    ]
+    wish_list = list(wishlist.objects.aggregate(*(pipeline)))
+    for ins in wish_list:
+        cart_pipeline =[
+        {
+            "$match" : {
+                "user_id" : ObjectId(user_id),
+                "product_id" : ObjectId(ins['product_id']),
+                "status" : "Pending"
+            }
+        },
+        {
+           "$project" :{
+                "_id":1,
+           }
+        }
+        ]
+        user_cart_item_obj = list(user_cart_item.objects.aggregate(*(cart_pipeline)))
+        if user_cart_item_obj != []:
+            ins['in_cart'] = True
+        else:
+            ins['in_cart'] = False
+    return wish_list

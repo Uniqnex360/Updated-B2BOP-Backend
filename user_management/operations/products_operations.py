@@ -131,11 +131,14 @@ def obtainProductCategoryListForDealer(request):
 
 def obtainbrandList(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    industry_id = request.GET.get('industry_id')
+    match = dict()
+    match['manufacture_unit_id_str'] = manufacture_unit_id
+    if industry_id != None and industry_id != "":
+        match['industry_id_str'] = industry_id
     pipeline =[
         {
-            "$match" : {
-                "manufacture_unit_id_str" : manufacture_unit_id
-            }
+            "$match" : match
         },
         {
            "$project" :{
@@ -157,6 +160,9 @@ def obtainProductsList(request):
     product_category_id = json_request.get('product_category_id')
     filters = json_request.get('filters')
     is_parent = json_request.get('is_parent')
+    brand_id = json_request.get('brand_id')
+    price_from = json_request.get('price_from')
+    price_to = json_request.get('price_to')
     product_list = []
 
     match = {}
@@ -187,6 +193,33 @@ def obtainProductsList(request):
                 }
             },
             {
+                "$lookup": {
+                    "from": "brand",
+                    "localField": "brand_id",
+                    "foreignField": "_id",
+                    "as": "brand_ins"
+                }
+            },
+            {
+            "$unwind": {
+                "path": "$brand_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+            }]
+        price_match = dict()
+        if brand_id != None and brand_id != "":
+            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            price_match['list_price'] = {
+                "$gte": int(price_from),
+                "$lte": int(price_to)
+            }
+        if price_match != {}:
+            brand_match = {
+                "$match" : price_match
+            }
+            pipeline.append(brand_match)
+        project_stage = {
             "$project" :{
                 "_id":0,
                 "id" : {"$toString" : "$_id"},
@@ -204,14 +237,14 @@ def obtainProductsList(request):
                 "availability" : 1
             }
             }
-        ]
+        pipeline.append(project_stage)
         if sort_by != None and sort_by != "":
-            pipeline2 = {
+            sorting_pipeline = {
                     "$sort": {
                         sort_by: int(sort_by_value)
                     }
                 }
-            pipeline.append(pipeline2)
+            pipeline.append(sorting_pipeline)
         product_list = list(product.objects.aggregate(*(pipeline)))
 
     elif is_parent != None and is_parent != "" and is_parent == True:
@@ -267,6 +300,33 @@ def obtainProductsList(request):
             }
         },
         {
+            "$lookup": {
+                "from": "brand",
+                "localField": "product_ins.brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }
+            },
+            {
+            "$unwind": {
+                "path": "$brand_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+        }]
+        price_match = dict()
+        if brand_id != None and brand_id != "":
+            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            price_match['product_ins.list_price'] = {
+                "$gte": int(price_from),
+                "$lte": int(price_to)
+            }
+        if price_match != {}:
+            brand_match = {
+                "$match" : price_match
+            }
+            pipeline.append(brand_match)
+        project_stage = {
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$product_ins._id"},
@@ -283,17 +343,16 @@ def obtainProductsList(request):
                 "currency": "$product_ins.currency",
                 "availability": "$product_ins.availability"
             }
-        },
-        # {"$skip": skip},
-            # {"$limit": limit}
-        ]
+        }
+        pipeline.append(project_stage)
+        
         if sort_by != None and sort_by != "":
-            pipeline2 = {
+            sorting_pipeline = {
                     "$sort": {
                         sort_by: int(sort_by_value)
                     }
                 }
-            pipeline.append(pipeline2)
+            pipeline.append(sorting_pipeline)
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
@@ -302,12 +361,16 @@ def obtainProductsListForDealer(request):
     product_category_id = request.GET.get('product_category_id')
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     industry_id_str = request.GET.get('industry_id')
-    skip = int(request.GET.get("skip")) -1
+    skip = int(request.GET.get("skip"))
     limit = int(request.GET.get("limit"))
 
     filters = request.GET.get('filters')
     sort_by = request.GET.get('sort_by')
     sort_by_value = request.GET.get('sort_by_value')
+
+    brand_id = request.GET.get('brand_id')
+    price_from = request.GET.get('price_from')
+    price_to = request.GET.get('price_to')
 
     match = {}
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -347,8 +410,21 @@ def obtainProductsListForDealer(request):
                 "path": "$brand_ins", 
                 "preserveNullAndEmptyArrays": True
             }
-            },
-            {
+            }]
+        price_match = dict()
+        if brand_id != None and brand_id != "":
+            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            price_match['list_price'] = {
+                "$gte": int(price_from),
+                "$lte": int(price_to)
+            }
+        if price_match != {}:
+            brand_match = {
+                "$match" : price_match
+            }
+            pipeline.append(brand_match)
+        project_stage = {
             "$project" :{
                 "_id":0,
                 "id" : {"$toString" : "$_id"},
@@ -368,11 +444,11 @@ def obtainProductsListForDealer(request):
                 "discount" : 1,
                 "quantity" : 1,
             }
-            },
+            }
             
-        ]
+        pipeline.append(project_stage)
         if sort_by != None and sort_by != "":
-            pipeline2 = [{
+            sorting_pipeline = [{
                     "$sort": {
                         sort_by: int(sort_by_value)
                     }
@@ -383,7 +459,7 @@ def obtainProductsListForDealer(request):
                 {
                     "$limit": limit
                 }]
-            pipeline.extend(pipeline2)
+            pipeline.extend(sorting_pipeline)
         product_list = list(product.objects.aggregate(*(pipeline)))
 
     elif product_category_id != "":
@@ -454,8 +530,22 @@ def obtainProductsListForDealer(request):
                 "as": "brand_ins"
             }
         },
-        {"$unwind": "$brand_ins"},
-        {
+        {"$unwind": "$brand_ins"}
+        ]
+        price_match = dict()
+        if brand_id != None and brand_id != "":
+            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            price_match['product_ins.list_price'] = {
+                "$gte": int(price_from),
+                "$lte": int(price_to)
+            }
+        if price_match != {}:
+            brand_match = {
+                "$match" : price_match
+            }
+            pipeline.append(brand_match)
+        project_stage = {
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$product_ins._id"},
@@ -476,9 +566,9 @@ def obtainProductsListForDealer(request):
                 "quantity" : "$product_ins.quantity",
             }
         }
-        ]
+        pipeline.append(project_stage)
         if sort_by != None and sort_by != "":
-            pipeline2 = [{
+            sorting_pipeline = [{
                     "$sort": {
                         sort_by: int(sort_by_value)
                     }
@@ -489,7 +579,7 @@ def obtainProductsListForDealer(request):
                 {
                     "$limit": limit
                 }]
-            pipeline.extend(pipeline2)
+            pipeline.extend(sorting_pipeline)
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
@@ -498,6 +588,7 @@ def productCountForDealer(request):
     product_category_id = request.GET.get('product_category_id')
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     filters = request.GET.get('filters')
+    industry_id_str = request.GET.get('industry_id')
 
     match = {}
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -507,6 +598,9 @@ def productCountForDealer(request):
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all":
         match['availability'] = True if filters == "true" else False
+    if industry_id_str != None and industry_id_str != "":
+        match['industry_id_str'] = industry_id_str
+    
     
     if product_category_id == "":
 
@@ -587,6 +681,15 @@ def obtainProductDetails(request):
                 "_id" : ObjectId(product_id),
             }
         },
+        {
+                "$lookup": {
+                    "from": "product_category",
+                    "localField": "category_id",
+                    "foreignField": "_id",
+                    "as": "product_category_ins"
+                }
+            },
+            {"$unwind" : "$product_category_ins"},
          {
             "$lookup": {
                 "from": "brand",
@@ -631,12 +734,18 @@ def obtainProductDetails(request):
             "attributes" : 1,
             "features" : 1,
             "from_the_manufacture" : 1,
-            "visible" : 1
+            "visible" : 1,
+            "end_level_category" : "$product_category_ins.name",
+            "industry_id_str" : {"$ifNull": ["$industry_id_str",""]}
            }
         }
     ]
     product_list = list(product.objects.aggregate(*(pipeline)))
     if len(product_list) > 0:
+        if product_list[0]['industry_id_str'] != "":
+            product_list[0]['industry_name'] = DatabaseModel.get_document(industry.objects,{"id" :product_list[0]['industry_id_str']},['name']).name
+        else:
+            product_list[0]['industry_name'] = "N/A"
         product_list = product_list[0]
     return product_list
 
@@ -1190,6 +1299,7 @@ def productSearch(request):
     sort_by_value = json_request.get("sort_by_value")
     skip = json_request.get("skip")
     limit = json_request.get("limit")
+    product_category_id = request.GET.get('product_category_id')
 
     match = dict()
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -1294,8 +1404,13 @@ def productSearch(request):
                 "foreignField": "_id",
                 "as": "product_category_ins"
             }
-        },
-        {"$unwind" : "$product_category_ins"},
+        }]
+    if product_category_id != None and product_category_id != "":
+        match = {"$match" : {
+            "product_category_ins._id" : ObjectId(product_category_id)
+        }}
+        pipeline.append(match)
+    pipeline3 = [{"$unwind" : "$product_category_ins"},
         {
             "$addFields": {
                 "end_level_category": "$product_category_ins.name"
@@ -1381,7 +1496,8 @@ def productSearch(request):
             {
                 "$limit": limit
             }]
-        pipeline.extend(pipeline2)
+        pipeline3.extend(pipeline2)
+    pipeline.extend(pipeline3)
     
     results = list(product.objects.aggregate(pipeline))
     return results
@@ -1546,3 +1662,145 @@ def getColumnFormExcel(request):
     data['user_columns'] = k
     data['general_columns'] = ['sku_number_product_code_item_number','model','mpn','upc_ean','breadcrumb','brand_name','product_name','long_description','short_description','features','images','attributes','tags','msrp','currency','was_price','list_price','discount','quantity_price','quantity','availability','return_applicable']
     return data
+
+
+@csrf_exempt
+def productCompare(request):
+    json_request = JSONParser().parse(request)
+    product_list = json_request['product_list']
+    if product_list != []:
+        product_list = [ObjectId(ins) for ins in product_list]
+    pipeline =[
+        {
+            "$match" : {
+                "_id" : {"$in" : product_list},
+            }
+        },
+         {
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }
+        },
+        {
+        "$unwind": {
+            "path": "$brand_ins", 
+            "preserveNullAndEmptyArrays": True
+        }
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "id" : {"$toString" : "$_id"},
+            "product_name" : 1,
+            "sku_number_product_code_item_number" : 1,
+            "model" : 1,
+            "mpn" : 1,
+            "upc_ean" : 1,
+            "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
+            "long_description" : 1,
+            "short_description" : 1,
+            "list_price" : 1,
+            "msrp" : {"$ifNull" : ["$msrp",0.0]},
+            "was_price" : {"$ifNull" : ["$was_price",0.0]},
+            "discount": { 
+            "$concat": [
+                { "$toString": { "$round": ["$discount", 2] } }, 
+                "%" 
+            ] 
+            },
+            "brand_name" : 1,
+            "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
+            "currency" : 1,
+            "quantity" : 1,
+            "availability" : 1,
+            "images" : 1,
+            "attributes" : 1,
+            "features" : 1,
+            "from_the_manufacture" : 1,
+            "visible" : 1
+           }
+        }
+    ]
+    product_list = list(product.objects.aggregate(*(pipeline)))
+    return product_list
+
+
+def get_related_products(request):
+    # Get the product_id from the request
+    product_id = request.GET.get('product_id')
+    product_object_id = ObjectId(product_id)
+
+    # Fetch the current product's details
+    current_product = DatabaseModel.get_document(
+        product.objects,
+        {"id": product_object_id},
+        ['brand_id', 'category_id', 'attributes']
+    )
+
+    # Extract plain values for use in the pipeline
+    current_brand_id = str(current_product.brand_id.id) if current_product.brand_id else None
+    current_category_id = str(current_product.category_id.id) if current_product.category_id else None
+    # current_attributes = current_product.attributes or []
+
+    # MongoDB aggregation pipeline
+    pipeline = [
+        # Match products excluding the current one
+        {
+            "$match": {
+                "_id": {"$ne": product_object_id},  # Exclude current product
+                "visible": True,                   # Only include visible products
+                "availability": True               # Only include available products
+            }
+        },
+        # Add a relevance score based on matching criteria
+        {
+            "$addFields": {
+                "relevance": {
+                    "$sum": [
+                        {"$cond": [{"$eq": ["$brand_id", current_brand_id]}, 3, 0]},
+                        {"$cond": [{"$eq": ["$category_id", current_category_id]}, 2, 0]},
+                        # {"$cond": [{"$gt": [{"$size": {"$setIntersection": ["$attributes", current_attributes]}}, 0]}, 1, 0]}
+                    ]
+                }
+            }
+        },
+        # Sort by relevance and additional criteria (e.g., rating)
+        {
+            "$sort": {
+                "relevance": -1,        # Higher relevance first
+                "rating_average": -1    # Sort by highest rating if relevance is equal
+            }
+        },
+        # Limit the number of related products returned
+        {"$limit": 10},
+        # Project only necessary fields
+        {
+            "$project": {
+               "_id":0,
+                "id" : {"$toString" : "$_id"},
+                "name" : "$product_name",
+                "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
+                "sku_number" : "$sku_number_product_code_item_number",
+                "mpn" : 1,
+                "msrp" : {"$round" : ["$msrp",2]},
+                "was_price" :{"$round" : ["$was_price",2]},
+                "brand_name" : 1,
+                "visible" : 1,
+                "end_level_category" : "$product_category_ins.name",
+                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
+                "price" : {"$round":["$list_price",2]},
+                "currency" : 1,
+                "availability" : 1,
+                "discount" : 1,
+                "quantity" : 1,
+                "upc_ean" : 1,
+            }
+        }
+    ]
+
+    # Execute the pipeline
+    related_products = list(product.objects.aggregate(*pipeline))
+    return related_products

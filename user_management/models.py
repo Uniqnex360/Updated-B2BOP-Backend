@@ -1,5 +1,5 @@
 from django.db import models
-from mongoengine import fields,Document
+from mongoengine import fields,Document,EmbeddedDocument, EmbeddedDocumentField
 from datetime import datetime
 import re
 import random
@@ -242,7 +242,7 @@ class transaction(Document):
     currency = fields.StringField(required=True) 
     transaction_date = fields.DateTimeField(default=datetime.now)
     payment_method = fields.StringField(choices=["credit_card", "bank_transfer", "paypal"], default="bank_transfer")
-    status = fields.StringField(choices=["Completed","Paid", "Failed", "Pending"], default="Pending") 
+    status = fields.StringField(choices=["Completed","Paid", "Failed"], default="Paid") 
     payment_proof = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
@@ -311,3 +311,26 @@ class user_industry_config(Document):
 
 class ignore_calls(Document):
     name = fields.StringField()
+
+class status_message(Document):
+    code = fields.StringField()
+    message = fields.StringField()
+
+
+class wishlist(Document):
+    user_id = fields.ReferenceField(user)
+    product_id = fields.ReferenceField(product)
+    added_at = fields.DateTimeField(default=datetime.now())
+    updated_at = fields.DateTimeField(default=datetime.now())
+
+
+class ScheduledTask(models.Model):
+    task_name = fields.StringField()
+    trigger_time = fields.DateTimeField()
+    status = fields.StringField(default="pending")
+    payload = fields.DictField()
+    created_at = fields.DateTimeField(default=datetime.now())
+    updated_at = fields.DateTimeField(default=datetime.now())
+
+    def __str__(self):
+        return f"{self.task_name} - {self.trigger_time}"
