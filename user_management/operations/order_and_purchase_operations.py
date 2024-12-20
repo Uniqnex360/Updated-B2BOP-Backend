@@ -1371,7 +1371,7 @@ def createWishList(request):
     product_id = json_request.get('product_id')
 
     Wishlist_obj = DatabaseModel.get_document(wishlist.objects,{"user_id" : ObjectId(user_id),"product_id" : ObjectId(product_id)},['id'])
-    if Wishlist_obj != None:
+    if Wishlist_obj == None:
         DatabaseModel.save_documents(wishlist,{"user_id" : ObjectId(user_id), "product_id" : ObjectId(product_id)})
         data['is_created'] = True
     else:
@@ -1417,7 +1417,11 @@ def obtainWishlistForBuyer(request):
                 "primary_image" : {"$first":"$product_ins.images"},
                 "sku_number" : "$product_ins.sku_number_product_code_item_number",
                 "mpn_number" : "$product_ins.mpn",
-                "brand_name" : "$product_ins.brand_name"
+                "brand_name" : "$product_ins.brand_name",
+                "availability" : "$product_ins.availability",
+                "was_price" : "$product_ins.was_price",
+                "discount" : "$product_ins.discount",
+                "msrp" : "$product_ins.msrp"
            }
         }
     ]

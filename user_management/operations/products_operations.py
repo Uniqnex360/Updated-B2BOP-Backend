@@ -410,7 +410,22 @@ def obtainProductsListForDealer(request):
                 "path": "$brand_ins", 
                 "preserveNullAndEmptyArrays": True
             }
-            }]
+            },
+            {
+                "$lookup": {
+                    "from": "wishlist",
+                    "localField": "_id",
+                    "foreignField": "product_id",
+                    "as": "wishlist_ins"
+                }
+            },
+            {
+            "$unwind": {
+                "path": "$wishlist_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+            }
+            ]
         price_match = dict()
         if brand_id != None and brand_id != "":
             price_match['brand_ins._id'] = ObjectId(brand_id)
@@ -443,6 +458,20 @@ def obtainProductsListForDealer(request):
                 "availability" : 1,
                 "discount" : 1,
                 "quantity" : 1,
+                "is_wishlist": {
+                "$cond": {
+                    "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                    "then": True,
+                    "else": False
+                }
+                },
+                "wishlist_id": {
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": {"$toString":"$wishlist_ins._id"}, 
+                        "else": None
+                    }
+                }
             }
             }
             
@@ -530,7 +559,21 @@ def obtainProductsListForDealer(request):
                 "as": "brand_ins"
             }
         },
-        {"$unwind": "$brand_ins"}
+        {"$unwind": "$brand_ins"},
+         {
+                "$lookup": {
+                    "from": "wishlist",
+                    "localField": "product_ins._id",
+                    "foreignField": "product_id",
+                    "as": "wishlist_ins"
+                }
+            },
+            {
+            "$unwind": {
+                "path": "$wishlist_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+            }
         ]
         price_match = dict()
         if brand_id != None and brand_id != "":
@@ -564,6 +607,20 @@ def obtainProductsListForDealer(request):
                 "availability": "$product_ins.availability",
                 "discount" : {"$round": ["$product_ins.discount", 2]}, 
                 "quantity" : "$product_ins.quantity",
+                "is_wishlist": {
+                "$cond": {
+                    "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                    "then": True,
+                    "else": False
+                }
+                },
+                "wishlist_id": {
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": {"$toString":"$wishlist_ins._id"}, 
+                        "else": None
+                    }
+                }
             }
         }
         pipeline.append(project_stage)
@@ -1404,7 +1461,22 @@ def productSearch(request):
                 "foreignField": "_id",
                 "as": "product_category_ins"
             }
-        }]
+        },
+         {
+                "$lookup": {
+                    "from": "wishlist",
+                    "localField": "_id",
+                    "foreignField": "product_id",
+                    "as": "wishlist_ins"
+                }
+            },
+            {
+            "$unwind": {
+                "path": "$wishlist_ins", 
+                "preserveNullAndEmptyArrays": True
+            }
+            }
+        ]
     if product_category_id != None and product_category_id != "":
         match = {"$match" : {
             "product_category_ins._id" : ObjectId(product_category_id)
@@ -1478,7 +1550,21 @@ def productSearch(request):
                 "availability" : 1,
                 "quantity" : 1,
                 "discount" : {"$round" : ["$discount",2]},
-                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]}
+                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
+                "is_wishlist": {
+                "$cond": {
+                    "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                    "then": True,
+                    "else": False
+                }
+                },
+                "wishlist_id": {
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": {"$toString":"$wishlist_ins._id"}, 
+                        "else": None
+                    }
+                }
             }
         },
         # {"$skip": 0},
@@ -1728,79 +1814,145 @@ def productCompare(request):
     return product_list
 
 
+
+# def get_related_products(request):
+#     # Get the product_id and manufacture_unit_id from the request
+#     product_id = request.GET.get('product_id')
+#     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+#     product_object_id = ObjectId(product_id)
+
+#     # Fetch the current product's details from the database
+#     current_product = DatabaseModel.get_document(
+#         product.objects,
+#         {"id": product_object_id},  # Using '_id' for MongoDB queries
+#         ['brand_id', 'category_id', 'attributes']
+#     )
+
+#     # Extract plain values for use in the pipeline
+#     current_brand_id = str(current_product.brand_id.id) if current_product.brand_id else None
+#     current_category_id = str(current_product.category_id.id) if current_product.category_id else None
+#     # If you plan to use attributes, ensure it's extracted like below
+#     # current_attributes = current_product.attributes or []
+
+#     # MongoDB aggregation pipeline
+#     pipeline = [
+#     {
+#         "$match": {
+#             "_id": {"$ne": product_object_id},  # Exclude the current product
+#             "visible": True,
+#             "availability": True,
+#             "manufacture_unit_id": ObjectId(manufacture_unit_id)
+#         }
+#     },
+#     {
+#         "$addFields": {
+#             "relevance": {
+#                 "$sum": [
+#                     {"$cond": [{"$eq": ["$brand_id", current_brand_id]}, 3, 0]},
+#                     {"$cond": [{"$eq": ["$category_id", current_category_id]}, 2, 0]},
+#                     # Uncomment and adjust if you want to include attribute matching
+#                     # {"$cond": [{"$gt": [{"$size": {"$setIntersection": ["$attributes", current_attributes]}}, 0]}, 1, 0]}
+#                 ]
+#             }
+#         }
+#     },
+#     {
+#         "$sort": {
+#             "relevance": -1,  # Sort by relevance score
+#             "rating_average": -1  # If relevance is the same, sort by rating
+#         }
+#     },
+#     {"$limit": 10},
+#     {
+#         "$project": {
+#             "_id": 0,
+#             "id": {"$toString": "$_id"},
+#             "name": "$product_name",
+#             "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+#             "sku_number": "$sku_number_product_code_item_number",
+#             "mpn": 1,
+#             "msrp": {"$round": ["$msrp", 2]},
+#             "was_price": {"$round": ["$was_price", 2]},
+#             "brand_name": 1,
+#             "visible": 1,
+#             "end_level_category": "$product_category_ins.name",
+#             "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+#             "price": {"$round": ["$list_price", 2]},
+#             "currency": 1,
+#             "availability": 1,
+#             "discount": 1,
+#             "quantity": 1,
+#             "upc_ean": 1,
+#         }
+#     }
+#     ]
+
+#     # Execute the pipeline and return the result
+#     related_products = list(product.objects.aggregate(*pipeline))
+    
+#     # You can format the response as needed, for example, using Django's JsonResponse
+#     return related_products
+
+
 def get_related_products(request):
-    # Get the product_id from the request
+    # Get the product_id and manufacture_unit_id from the request
     product_id = request.GET.get('product_id')
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
     product_object_id = ObjectId(product_id)
 
-    # Fetch the current product's details
+    # Fetch the current product's details from the database
     current_product = DatabaseModel.get_document(
         product.objects,
-        {"id": product_object_id},
-        ['brand_id', 'category_id', 'attributes']
+        {"id": product_object_id},  # Using '_id' for MongoDB queries
+        ['brand_id', 'category_id', 'list_price']
     )
 
     # Extract plain values for use in the pipeline
     current_brand_id = str(current_product.brand_id.id) if current_product.brand_id else None
     current_category_id = str(current_product.category_id.id) if current_product.category_id else None
-    # current_attributes = current_product.attributes or []
+    current_price = current_product.list_price if current_product.list_price else 0
 
     # MongoDB aggregation pipeline
     pipeline = [
-        # Match products excluding the current one
         {
             "$match": {
-                "_id": {"$ne": product_object_id},  # Exclude current product
-                "visible": True,                   # Only include visible products
-                "availability": True               # Only include available products
+                "_id": {"$ne": product_object_id},  # Exclude the current product
+                "visible": True,                    # Only include visible products
+                "availability": True,               # Only include available products
+                "manufacture_unit_id": ObjectId(manufacture_unit_id),  # Ensure proper ID usage
+                "brand_id": ObjectId(current_brand_id),   # Same brand
+                "category_id": ObjectId(current_category_id),  # Same category
+                # "list_price": {"$gte": current_price * 0.8, "$lte": current_price * 1.2}  # Price range (±20%)
             }
         },
-        # Add a relevance score based on matching criteria
         {
-            "$addFields": {
-                "relevance": {
-                    "$sum": [
-                        {"$cond": [{"$eq": ["$brand_id", current_brand_id]}, 3, 0]},
-                        {"$cond": [{"$eq": ["$category_id", current_category_id]}, 2, 0]},
-                        # {"$cond": [{"$gt": [{"$size": {"$setIntersection": ["$attributes", current_attributes]}}, 0]}, 1, 0]}
-                    ]
-                }
-            }
+            "$sample": {"size": 10}  # Randomly select 10 products
         },
-        # Sort by relevance and additional criteria (e.g., rating)
-        {
-            "$sort": {
-                "relevance": -1,        # Higher relevance first
-                "rating_average": -1    # Sort by highest rating if relevance is equal
-            }
-        },
-        # Limit the number of related products returned
-        {"$limit": 10},
-        # Project only necessary fields
         {
             "$project": {
-               "_id":0,
-                "id" : {"$toString" : "$_id"},
-                "name" : "$product_name",
-                "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
-                "sku_number" : "$sku_number_product_code_item_number",
-                "mpn" : 1,
-                "msrp" : {"$round" : ["$msrp",2]},
-                "was_price" :{"$round" : ["$was_price",2]},
-                "brand_name" : 1,
-                "visible" : 1,
-                "end_level_category" : "$product_category_ins.name",
-                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
-                "price" : {"$round":["$list_price",2]},
-                "currency" : 1,
-                "availability" : 1,
-                "discount" : 1,
-                "quantity" : 1,
-                "upc_ean" : 1,
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": "$product_name",
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "sku_number": "$sku_number_product_code_item_number",
+                "mpn": 1,
+                "msrp": {"$round": ["$msrp", 2]},
+                "was_price": {"$round": ["$was_price", 2]},
+                "brand_name": 1,
+                "visible": 1,
+                "end_level_category": "$product_category_ins.name",
+                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+                "price": {"$round": ["$list_price", 2]},
+                "currency": 1,
+                "availability": 1,
+                "discount": 1,
+                "quantity": 1,
+                "upc_ean": 1,
             }
         }
     ]
 
-    # Execute the pipeline
-    related_products = list(product.objects.aggregate(*pipeline))
+    # Execute the pipeline and return the result
+    related_products = list(product.objects.aggregate(*pipeline))    
+    # You can format the response as needed, for example, using Django's JsonResponse
     return related_products
