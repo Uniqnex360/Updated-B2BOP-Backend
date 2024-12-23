@@ -516,7 +516,7 @@ def createUser(request):
         manufacture_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
 
         DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : manufacture_admin_role_id})
-        roleName = "Manufacturer"
+        roleName = "Seller"
 
     else:
         user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
@@ -529,7 +529,7 @@ def createUser(request):
             industry_list = [ObjectId(ins) for ins in industry_list]
             DatabaseModel.save_documents(user_industry_config,{"user_id_str" : str(user_obj.id),"allowed_industry_list" : industry_list})
 
-        roleName = "Dealer"
+        roleName = "Buyer"
 
     subject = user_creation_template_obj.subject.format(role=roleName)
 
@@ -1688,3 +1688,65 @@ def exportAllManufacturerDetailsandUserDetails(request):
         response.write(buffer.read())
 
     return response
+
+
+def obtainDashboardDetailsForSuperAdmin(request):
+    data = dict()
+    pipeline = [
+    {
+        "$project": {
+            "_id": 0,
+            "id" : {"$toString" : "$_id"},
+            'name': "$name",
+        }
+        }
+    ]
+    manufacture_unit_list = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    data['manufacture_unit_count'] = len(manufacture_unit_list) if manufacture_unit_list != [] else 0
+
+    for unit_ins in manufacture_unit_list:
+        pipeline = [
+        {
+                "$match": {
+                    "manufacture_unit_id" : ObjectId(unit_ins['id']),
+                }
+            },
+        {
+            "$group": {
+                "_id": None,
+                'total_amount': {'$sum': '$amount'},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                'total_amount': "$total_amount",
+            }
+            }
+        ]
+        total_user_result = list(user.objects.aggregate(*(pipeline)))
+        data['total_users'] = total_user_result[0]['total_amount'] if total_user_result else 0
+
+        pipeline = [
+        {
+                "$match": {
+                    "manufacture_unit_id" : ObjectId(unit_ins['id']),
+                }
+            },
+        {
+            "$group": {
+                "_id": None,
+                'total_amount': {'$sum': '$amount'},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                'total_amount': "$total_amount",
+            }
+            }
+        ]
+        total_product_result = list(product.objects.aggregate(*(pipeline)))
+        data['total_products'] = total_product_result[0]['total_amount'] if total_product_result else 0
+
+    return data
