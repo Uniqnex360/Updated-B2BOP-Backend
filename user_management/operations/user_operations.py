@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from user_management.models import *
 from django.http import JsonResponse,HttpResponse
-from b2bop_project.custom_mideleware import SIMPLE_JWT, createJsonResponse, createCookies,obtainManufactureIdFromToken, obtainUserIdFromToken, obtainUserRoleFromToken
+from b2bop_project.custom_mideleware import SIMPLE_JWT, createJsonResponse, createCookies
 from rest_framework.decorators import api_view
 from django.middleware import csrf
 from django.views.decorators.csrf import csrf_exempt
@@ -38,7 +38,7 @@ def loginUser(request):
             'id': str(user_data_obj.id),
             'name': f"{user_data_obj.first_name} {user_data_obj.last_name or ''}".strip(),
             'email': user_data_obj.email,
-            'role_name': user_data_obj.role_id.name,
+            'role_name': role_name,
             # 'max_age': SIMPLE_JWT['SESSION_COOKIE_MAX_AGE'],
             'manufacture_unit_id' : manufacture_unit_id
         }
@@ -55,7 +55,7 @@ def loginUser(request):
             'id': str(user_data_obj.id),
             'name': f"{user_data_obj.first_name} {user_data_obj.last_name or ''}".strip(),
             'email': user_data_obj.email,
-            'role_name': user_data_obj.role_id.name,
+            'role_name': role_name,
             # 'max_age': SIMPLE_JWT['SESSION_COOKIE_MAX_AGE'],
             'manufacture_unit_id' : manufacture_unit_id
         }
@@ -871,6 +871,11 @@ def obtainDealerDetails(request):
                 "amount" : {"$concat" : [{"$toString":"$amount"},"$currency"]},
                 "product_list" : "$product_list"
         }
+        },
+        {
+            "$sort" : {
+                "id" : -1
+            }
         }
     ]
     order_list = list(order.objects.aggregate(*(pipeline)))
@@ -1006,7 +1011,7 @@ def obtainDashboardDetailsForManufactureAdmin(request):
     {
         "$sort" : {"units_sold" : -1}
     },
-    {"$limit" : 10}
+    {"$limit" : 5}
     ]
     data['top_selling_brands'] = list(top_selling_brand.objects.aggregate(*(pipeline)))
 
@@ -1081,81 +1086,60 @@ def obtainDashboardDetailsForManufactureAdmin(request):
 
 
 def manufactureDashboardEachDealerOrderValue(request):
-    data = dict()
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
-    pipeline = [
-    {"$match": {"manufacture_unit_id": ObjectId(manufacture_unit_id)}},
-    {
-        "$lookup": {
-            "from": "role",  
-            "localField": "role_id",  
-            "foreignField": "_id",  
-            "as": "role_ins"  
-        }
-    },
-    {
-        "$unwind": {
-            "path": "$role_ins",
-        }
-    },
-    {
-        "$match" : {
-            "role_ins.name" : "dealer_admin"
-        }
-    },
-    # {
-    #         "$count": "total_count"
-    # }
-    {
-        "$project" : {
-            "_id" : 0,
-            "id" : {"$toString" : "$_id"},
-            "name" : {
-            "$concat": [
-                "$first_name",
-                { 
-                "$cond": {
-                    "if": { "$ne": ["$last_name", None] },  
-                    "then": " ",                             
-                    "else": ""                               
-                }
-                },
-                { "$ifNull": ["$last_name", ""] }        
-            ]
-            },
-        }
-    }
-    ]
-    total_dealer_list = list(user.objects.aggregate(*(pipeline)))
 
-    for ins in total_dealer_list:
-        pipeline = [
+    # Aggregate pipeline to get the dealer admin details and their total order value
+    pipeline = [
+        {"$match": {"manufacture_unit_id": ObjectId(manufacture_unit_id)}},
         {
-            "$match": {
-                "customer_id": ObjectId(ins['id']),
-                "payment_status": "Completed"
+            "$lookup": {
+                "from": "role",
+                "localField": "role_id",
+                "foreignField": "_id",
+                "as": "role_ins",
             }
         },
+        {"$unwind": "$role_ins"},
+        {"$match": {"role_ins.name": "dealer_admin"}},
         {
-            "$group": {
-                "_id": None,
-                'total_amount': {'$sum': '$amount'},
+            "$lookup": {
+                "from": "order",
+                "let": {"dealer_id": "$_id"},
+                "pipeline": [
+                    {"$match": {"$expr": {"$eq": ["$customer_id", "$$dealer_id"]}}},
+                    {"$match": {"payment_status": "Completed"}},
+                    {"$group": {"_id": None, "total_amount": {"$sum": "$amount"}}},
+                    {"$project": {"_id": 0, "total_amount": 1}},
+                ],
+                "as": "order_value",
             }
         },
         {
             "$project": {
                 "_id": 0,
-                'total_amount': "$total_amount",
+                "id": {"$toString": "$_id"},
+                "name": {
+                    "$concat": [
+                        "$first_name",
+                        {"$cond": {"if": {"$ne": ["$last_name", None]}, "then": " ", "else": ""}},
+                        {"$ifNull": ["$last_name", ""]},
+                    ]
+                },
+                "order_value": {
+                    "$arrayElemAt": ["$order_value.total_amount", 0],
+                },
             }
-            }
-        ]
+        },
+        {"$addFields": {"order_value": {"$ifNull": ["$order_value", 0]}}},
+        {"$sort": {"order_value": -1}},
+        {"$limit": 10},
+    ]
 
-        order_amount_obj = list(order.objects.aggregate(*(pipeline)))
-        ins['order_value'] = order_amount_obj[0]['total_amount'] if order_amount_obj else 0
-    if total_dealer_list != []:
-        total_dealer_list = (sorted(total_dealer_list, key=lambda x: x["order_value"], reverse=True))[0:10]
-    data['total_dealer_list'] = total_dealer_list
-    return data    
+    # Execute the optimized pipeline
+    total_dealer_list = list(user.objects.aggregate(*pipeline))
+    
+    # Return the response data
+    return {"total_dealer_list": total_dealer_list}    
 
 
 def obtainDashboardDetailsForDealer(request):
@@ -1692,6 +1676,7 @@ def exportAllManufacturerDetailsandUserDetails(request):
 
 def obtainDashboardDetailsForSuperAdmin(request):
     data = dict()
+    top_10_manufacture_unit_list = list()
     pipeline = [
     {
         "$project": {
@@ -1707,30 +1692,35 @@ def obtainDashboardDetailsForSuperAdmin(request):
     for unit_ins in manufacture_unit_list:
         pipeline = [
         {
-                "$match": {
-                    "manufacture_unit_id" : ObjectId(unit_ins['id']),
-                }
-            },
-        {
-            "$group": {
-                "_id": None,
-                'total_amount': {'$sum': '$amount'},
+            "$match": {
+                "manufacture_unit_id" : ObjectId(unit_ins['id']),
             }
         },
         {
-            "$project": {
-                "_id": 0,
-                'total_amount': "$total_amount",
-            }
-            }
+            "$count": "total_count"
+        }
         ]
         total_user_result = list(user.objects.aggregate(*(pipeline)))
-        data['total_users'] = total_user_result[0]['total_amount'] if total_user_result else 0
+        unit_ins['total_users'] = total_user_result[0]['count'] if total_user_result else 0
+
+        pipeline = [
+        {
+            "$match": {
+                "manufacture_unit_id" : ObjectId(unit_ins['id']),
+            }
+        },
+        {
+            "$count": "total_count"
+        }
+        ]
+        total_product_result = list(product.objects.aggregate(*(pipeline)))
+        unit_ins['total_products'] = total_product_result[0]['count'] if total_product_result else 0
 
         pipeline = [
         {
                 "$match": {
-                    "manufacture_unit_id" : ObjectId(unit_ins['id']),
+                    "manufacture_unit_id_str" : unit_ins['id'],
+                    "payment_status": {"$in" : ["Completed"]}
                 }
             },
         {
@@ -1746,7 +1736,17 @@ def obtainDashboardDetailsForSuperAdmin(request):
             }
             }
         ]
-        total_product_result = list(product.objects.aggregate(*(pipeline)))
-        data['total_products'] = total_product_result[0]['total_amount'] if total_product_result else 0
+        total_sales_result = list(order.objects.aggregate(*(pipeline)))
+        unit_ins['total_sales'] = round(total_sales_result[0]['total_amount'] if total_sales_result else 0,2)
+        top_10_manufacture_unit_list.append(unit_ins)
+
+    if top_10_manufacture_unit_list != []:
+        top_10_manufacture_unit_list = (sorted(top_10_manufacture_unit_list, key=lambda x: x["total_sales"], reverse=True))[0:10]
+    if manufacture_unit_list != []:
+        manufacture_unit_list = (sorted(manufacture_unit_list, key=lambda x: x["name"]))
+
+    data['top_10_manufacture_unit_list'] = top_10_manufacture_unit_list
+    data['manufacture_unit_list'] = manufacture_unit_list
 
     return data
+

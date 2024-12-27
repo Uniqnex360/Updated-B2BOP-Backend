@@ -69,6 +69,8 @@ class user(Document):
     bank_details_id_list = fields.ListField(fields.ReferenceField(bank_details),default=[])
     ware_house_id_list = fields.ListField(fields.ReferenceField(address),default=[])
     website = fields.StringField()
+    creation_date = fields.DateTimeField(default=datetime.now())
+    updated_date = fields.DateTimeField(default=datetime.now())
 
     def clean(self):
         # Ensure unique dealer_id
@@ -334,3 +336,38 @@ class ScheduledTask(models.Model):
 
     def __str__(self):
         return f"{self.task_name} - {self.trigger_time}"
+    
+
+#####SHIPPING SCHEMAS######
+
+class Shipment(Document):
+    order_id = fields.StringField(required=True)  # Associated Order ID
+    carrier_id = fields.StringField(required=True)  # The carrier used for shipment
+    carrier_name = fields.StringField(required=True)  # Carrier name (e.g., USPS, FedEx, etc.)
+    tracking_number = fields.StringField(required=True)  # Tracking number provided by carrier
+    status = fields.StringField(default="pending")  # Shipment status (e.g., pending, shipped, delivered)
+    expected_delivery = fields.DateTimeField()  # Expected delivery date
+    ship_from = fields.DictField()  # Address from where the item is shipped
+    ship_to = fields.DictField()  # Address where the item is going
+    weight = fields.FloatField()  # Package weight
+    dimensions = fields.DictField()  # Package dimensions (length, width, height)
+    shipping_rate = fields.FloatField()  # Rate charged for shipping
+    created_at = fields.DateTimeField()
+    updated_at = fields.DateTimeField()
+
+class ShippingRate(Document):
+    carrier_id = fields.StringField(required=True)  # Carrier ID (e.g., USPS, FedEx)
+    carrier_name = fields.StringField(required=True)  # Carrier name
+    shipping_method = fields.StringField(required=True)  # Method (e.g., Ground, Express)
+    origin = fields.DictField()  # Origin address
+    destination = fields.DictField()  # Destination address
+    weight = fields.FloatField(required=True)  # Weight of the package
+    rate = fields.FloatField()  # Cost of the shipping method
+    dimensions = fields.DictField()  # Dimensions of the package
+    created_at = fields.DateTimeField()
+
+class TrackingInfo(Document):
+    shipment_id = fields.StringField(required=True)  # Associated shipment ID
+    tracking_number = fields.StringField(required=True)  # Carrier tracking number
+    events = fields.ListField(fields.DictField())  # List of tracking events (e.g., "In Transit", "Delivered")
+    last_updated = fields.DateTimeField()  # Timestamp for the last update

@@ -1372,11 +1372,13 @@ def createWishList(request):
 
     Wishlist_obj = DatabaseModel.get_document(wishlist.objects,{"user_id" : ObjectId(user_id),"product_id" : ObjectId(product_id)},['id'])
     if Wishlist_obj == None:
-        DatabaseModel.save_documents(wishlist,{"user_id" : ObjectId(user_id), "product_id" : ObjectId(product_id)})
+        Wishlist_obj = DatabaseModel.save_documents(wishlist,{"user_id" : ObjectId(user_id), "product_id" : ObjectId(product_id)})
         data['is_created'] = True
+        data['wishlist_id']	 = str(Wishlist_obj.id)
     else:
         DatabaseModel.update_documents(wishlist.objects,{"id":Wishlist_obj.id},{"updated_at" : datetime.now()})
         data['is_updated'] = True
+        data['wishlist_id']	 = str(Wishlist_obj.id)
 
     return data
 
@@ -1447,3 +1449,537 @@ def obtainWishlistForBuyer(request):
         else:
             ins['in_cart'] = False
     return wish_list
+
+
+
+
+@csrf_exempt
+def createReorder(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+
+    shipping_address_id = json_request.get('shipping_address_id')
+    order_id = json_request['order_id']
+
+    pipeline = [
+        {
+            "$match" : {
+                "_id" : ObjectId(order_id),
+            }
+        }, 
+        {
+           "$project" :{
+                "_id": 0,
+                "manufacture_unit_id_str" : 1,
+                "customer_id" : 1,
+                "order_items" : 1,
+                "currency" : 1,
+                "industry_id_str" : {"$ifNull":['industry_id_str',""]}
+           }
+        }
+    ]
+    old_order_obj = list(order.objects.aggregate(*(pipeline)))
+    old_order_obj = old_order_obj[0]
+
+    manufacture_unit_id_str = old_order_obj['manufacture_unit_id_str']
+    customer_id = old_order_obj['customer_id']
+    currency = old_order_obj['currency']
+    industry_id_str = old_order_obj['industry_id_str']
+    order_items = old_order_obj['order_items']
+
+    new_order_items = list()
+    amount = 0
+
+    for old_cart_ins in order_items:
+        pipeline = [
+        {
+            "$match" : {
+                "_id" : old_cart_ins,
+            }
+        },
+        {
+        "$lookup": {
+            "from": "product",  
+            "localField": "product_id",  
+            "foreignField": "_id",  
+            "as": "product_ins"  
+        }
+        },
+        {
+            "$unwind": {
+                "path": "$product_ins",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+        {
+           "$project" :{
+                "_id": 0,
+                "product_id" : 1,
+                "quantity" : 1,
+                "price" : "$product_ins.list_price"
+                
+           }
+        }
+        ]
+        cart_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+
+        cart_save_obj = dict()
+        cart_save_obj['unit_price'] = cart_list[0]['price']
+        cart_save_obj['price'] = cart_list[0]['price'] * cart_list[0]['quantity']
+        cart_save_obj['status'] = "Completed"
+        cart_save_obj['quantity'] = cart_list[0]['quantity']
+        cart_save_obj['product_id'] = cart_list[0]['product_id']
+        cart_save_obj['user_id'] = customer_id
+
+        new_cart_obj = DatabaseModel.save_documents(user_cart_item,cart_save_obj)
+        new_order_items.append(new_cart_obj.id)
+        
+        amount += cart_save_obj['price']
+
+
+    pipeline = [
+        {
+            "$match" : {
+                "_id" : customer_id
+            }
+        },
+        {
+            "$lookup" :{
+                "from" : "address",
+                "localField" : "default_address_id",
+                "foreignField" : "_id",
+                "as" : "address_ins"
+            }
+        },
+        {"$unwind" : "$address_ins"}, 
+        {
+           "$project" :{
+                "_id": 0,
+                "street" : "$address_ins.street",
+                "city" : "$address_ins.city",
+                "state" : "$address_ins.state",
+                "zipCode" : "$address_ins.zipCode",
+                "country" : "$address_ins.country"
+           }
+        }
+    ]
+    address_obj = list(user.objects.aggregate(*(pipeline)))
+    shipping_address_obj = DatabaseModel.save_documents(address,address_obj[0])
+
+    pipeline = [
+        {
+            "$match" : {
+                "manufacture_unit_id_str" : manufacture_unit_id_str,
+            }
+        },
+        { "$sort" : { "_id": -1 } },
+        { "$limit": 1 }, 
+        {
+           "$project" :{
+                "_id": 0,
+                "order_id" : 1
+           }
+        }
+    ]
+    orders = list(order.objects.aggregate(*(pipeline)))
+    if orders != []:
+        order_id = int(orders[0]['order_id']) + 1
+    else:
+        order_id = 1
+
+    formatted_order_id = f"{order_id:04d}"
+    
+    if industry_id_str == "":
+        order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : new_order_items,"total_items" : len(new_order_items), "shipping_address_id" : shipping_address_obj.id,"is_reorder" : True})
+    else:
+        order_obj = DatabaseModel.save_documents(order,{"order_id" : formatted_order_id,"customer_id" : ObjectId(customer_id),"manufacture_unit_id_str" : manufacture_unit_id_str, "amount" : amount, "currency" : currency,"order_items" : new_order_items,"total_items" : len(new_order_items), "shipping_address_id" : shipping_address_obj.id,"industry_id_str" : industry_id_str, "is_reorder" : True})
+
+    pipeline = [
+        {
+            "$match" : {
+                "_id" : {"$in" : new_order_items},
+            }
+        },
+        {
+        "$lookup": {
+            "from": "product",  
+            "localField": "product_id",  
+            "foreignField": "_id",  
+            "as": "product_ins"  
+        }
+        },
+        {
+            "$unwind": {
+                "path": "$product_ins",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+        {
+           "$project" :{
+                "_id": 0,
+                "product_id" : 1,
+                "quantity" : 1,
+                "product_quantity" : "$product_ins.quantity"
+           }
+        }
+    ]
+    cart_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+    for cart_ins in cart_list:
+        balance_quantity = cart_ins['product_quantity'] - cart_ins['quantity']
+        availability = True if balance_quantity > 0 else False
+        DatabaseModel.update_documents(product.objects,{"id" : cart_ins['product_id']},{"quantity" : balance_quantity,"availability" : availability})
+
+    data['is_created'] = True
+    data['order_id'] = str(order_obj.id)  
+        
+    return data
+
+
+
+
+
+import requests
+from django.conf import settings
+
+# settings.py
+SHIPENGINE_API_KEY = "TEST_NEwEXewJdqQ91auh8NyGHI6KpP9zolbLJUNi4JFsNJ0"
+SHIPENGINE_BASE_URL = "https://api.shipengine.com/v1"
+
+def get_carriers():
+    url = f"{SHIPENGINE_BASE_URL}/carriers"
+    headers = {
+        "API-Key": SHIPENGINE_API_KEY,
+    }
+    response = requests.get(url, headers=headers)
+    return response.json()
+
+
+import json
+
+def get_shipping_rates(ship_from, ship_to, packages, carrier_ids):
+    url = f"{SHIPENGINE_BASE_URL}/rates/estimate"
+    headers = {
+        "Content-Type": "application/json",
+        "API-Key": SHIPENGINE_API_KEY,
+    }
+
+    # package_list = []
+    
+    # for package in packages:
+    #     package_details = {
+    #         "weight": {
+    #             "value": package["weight"]["value"],  # Total weight (including quantity)
+    #             "unit": package["weight"]["unit"]
+    #         },
+    #     }
+        
+    #     package_list.append(package_details)
+    
+    # Final data to send
+    data = {
+        "carrier_ids": carrier_ids,
+        "from_country_code": ship_from["country_code"],
+        "from_postal_code": ship_from["postal_code"],
+        "to_country_code": ship_to["country_code"],
+        "to_postal_code": ship_to["postal_code"],
+        "weight": packages # Ensure packages are structured correctly
+    }
+    
+    # Debugging: Print out the request before sending
+    print("Sending Request to ShipEngine:")
+    print(json.dumps(data, indent=4))
+    
+    # Send the request to ShipEngine API
+    response = requests.post(url, json=data, headers=headers)
+    
+    # Return the response to check the result
+    return response.json()
+
+
+
+
+
+
+def create_shipping_label(ship_from, ship_to, package):
+    print(package)
+    url = f"{SHIPENGINE_BASE_URL}/labels"
+    headers = {
+
+        "Content-Type": "application/json",
+        "API-Key": SHIPENGINE_API_KEY,
+    }
+    data = {
+        "shipment": {
+            "service_code": "usps_priority_mail",  # Replace with actual service code
+            "ship_from": {
+                "name": ship_from["name"],
+                "address_line1": ship_from["address_line1"],
+                "city_locality": ship_from["city_locality"],
+                "state_province": ship_from["state_province"],  # Ensure state_province is passed
+                "country_code": ship_from["country_code"],
+                "postal_code": ship_from["postal_code"],
+                "phone": ship_from["phone"]
+            },
+            "ship_to": {
+                "name": ship_to["name"],
+                "address_line1": ship_to["address_line1"],
+                "city_locality": ship_to["city_locality"],
+                "state_province": ship_to["state_province"],  # Ensure state_province is passed
+                "country_code": ship_to["country_code"],
+                "postal_code": ship_to["postal_code"],
+                "phone": ship_to["phone"]
+            },
+            "packages": [
+                {
+                    "weight": {
+                        "value": package["weight"]['value'],
+                        "unit": "pound"
+                    },
+                    "dimensions": {
+                        "length": package["dimensions"]["length"],
+                        "width": package["dimensions"]["width"],
+                        "height": package["dimensions"]["height"],
+                        "unit": "inch"
+                    }
+                }
+            ]
+        }
+    }
+    response = requests.post(url, json=data, headers=headers)
+    return response.json()
+
+
+
+ship_from = {
+    "name": "John Doe",
+    "address_line1": "123 Main Street",
+    "city_locality": "Los Angeles",
+    "state_province": "CA",  # Added state code
+    "country_code": "US",
+    "postal_code": "90001",
+    "phone": "1234567890"
+}
+
+# ship_from = {
+#     "name": "John Doe",
+#     "address_line1": "123 Main Street",
+#     "city_locality": "Los Angeles",
+#     "state_province": "TN",  # Added state code
+#     "country_code": "IN",
+#     "postal_code": "643006",
+#     "phone": "1234567890"
+# }
+
+# ship_to = {
+#     "name": "Jane Smith",
+#     "address_line1": "456 Market Street",
+#     "city_locality": "San Francisco",
+#     "state_province": "CA",  # Added state code
+#     "country_code": "US",
+#     "postal_code": "94103",
+#     "phone": "0987654321"
+# }
+ship_to = {
+    "name": "Rajesh Kumar",
+    "address_line1": "123 Mount Road",
+    "city_locality": "Chennai",
+    "state_province": "TN",  # Tamil Nadu state code
+    "country_code": "IN",
+    "postal_code": "600002",
+    "phone": "9876543210"
+}
+
+package = {
+      "weight": {
+        "value": 50,  
+        "unit": "pound"
+      },
+      "dimensions": {
+        "length": 24,  
+        "width": 20,
+        "height": 16,
+        "unit": "inch"
+      },
+      "quantity": 1  
+    }
+
+# [{
+#       "weight": {
+#         "value": 50,  
+#         "unit": "pound"
+#       },
+#       "dimensions": {
+#         "length": 24,  
+#         "width": 20,
+#         "height": 16,
+#         "unit": "inch"
+#       },
+#       "quantity": 1  
+#     },
+#     {
+#       "weight": {
+#         "value": 50,  
+#         "unit": "pound"
+#       },
+#       "dimensions": {
+#         "length": 20,  
+#         "width": 22,
+#         "height": 18,
+#         "unit": "inch"
+#       },
+#       "quantity": 1  
+#     },
+#     {
+#       "weight": {
+#         "value": 50,
+#         "unit": "pound"
+#       },
+#       "dimensions": {
+#         "length": 26,  
+#         "width": 18,
+#         "height": 15,
+#         "unit": "inch"
+#       },
+#       "quantity": 1  
+#     }]
+  
+weight = {
+          "value": 6,
+          "unit": "ounce"
+        }
+   
+# # Fetch carrier IDs (once)
+# carriers = get_carriers()
+# carrier_ids = [carrier['carrier_id'] for carrier in carriers['carriers']]
+
+# # Get shipping rates
+# rates = get_shipping_rates(ship_from, ship_to, weight, carrier_ids)
+# print("Rates:", rates)
+
+# # Create a shipping label
+# label = create_shipping_label(ship_from, ship_to, package)
+# print("Label:", label)
+
+
+####Get Shipping Rates
+
+
+# def get_shipping_rates(ship_from, ship_to, package):
+#     url = "https://api.shipengine.com/v1/rates"
+#     headers = {
+#         "API-Key": SHIPENGINE_API_KEY,
+#         "Content-Type": "application/json"
+#     }
+
+#     data = {
+#         "ship_from": ship_from,
+#         "ship_to": ship_to,
+#         "packages": [package]
+#     }
+
+#     response = requests.post(url, json=data, headers=headers)
+#     rates = response.json()
+
+#     # Sort rates in ascending order
+#     sorted_rates = sorted(rates['rate'], key=lambda x: x['rate'])
+#     return sorted_rates
+
+####Confirm Shipment
+
+def confirm_shipment(ship_from, ship_to, package, carrier_id, rate):
+    url = "https://api.shipengine.com/v1/labels"
+    headers = {
+        "API-Key": SHIPENGINE_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "shipment": {
+            "service_code": carrier_id,  # Carrier service code (e.g., "usps_priority_mail")
+            "ship_from": ship_from,
+            "ship_to": ship_to,
+            "packages": [package],
+            "rates": rate
+        }
+    }
+
+    response = requests.post(url, json=data, headers=headers)
+    shipment = response.json()
+    return shipment
+
+####Track Shipment
+
+def track_shipment(tracking_number):
+    url = f"https://api.shipengine.com/v1/tracking?tracking_number={tracking_number}"
+    headers = {
+        "API-Key": SHIPENGINE_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(url, headers=headers)
+    tracking_info = response.json()
+
+    # Save tracking info in the database
+    TrackingInfo.objects.create(
+        shipment_id=tracking_info['shipment_id'],
+        tracking_number=tracking_info['tracking_number'],
+        events=tracking_info['events'],
+        last_updated=tracking_info['last_updated']
+    )
+
+    return tracking_info
+
+
+######Live Tracking Updates
+
+
+def update_tracking_info(tracking_number):
+    tracking_info = track_shipment(tracking_number)
+
+    # Update the tracking status in the database
+    tracking_obj = TrackingInfo.objects(tracking_number=tracking_number).first()
+    tracking_obj.events = tracking_info['events']
+    tracking_obj.last_updated = datetime.now()
+    tracking_obj.save()
+
+    return tracking_info
+
+
+#########Return the Response to the User
+
+def get_order_tracking_status(order_id):
+    shipment = Shipment.objects(order_id=order_id).first()
+    tracking_info = TrackingInfo.objects(shipment_id=shipment.id).first()
+
+    return {
+        "tracking_number": shipment.tracking_number,
+        "status": shipment.status,
+        "events": tracking_info.events if tracking_info else [],
+        "expected_delivery": shipment.expected_delivery
+    }
+
+def getAvaliableCarrierList(request):
+    data = dict()
+    carrier_list = list()
+    error = ""
+    try:
+        url = f"{SHIPENGINE_BASE_URL}/carriers"
+        headers = {
+            "API-Key": SHIPENGINE_API_KEY,
+        }
+        response = requests.get(url, headers=headers)
+        for carrier in response.json():
+            result_data = {
+                "carrier_id" : carrier['carrier_id'],
+                "carrier_code" : carrier['carrier_code']
+            }
+            carrier_list.append(result_data)
+    except Exception as e:
+        error = e
+    data = {
+            "carrier_list" : carrier_list,
+            "error" : error
+            }
+    return data
+
+

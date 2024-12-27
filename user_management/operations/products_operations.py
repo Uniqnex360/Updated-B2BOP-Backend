@@ -132,24 +132,44 @@ def obtainProductCategoryListForDealer(request):
 def obtainbrandList(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     industry_id = request.GET.get('industry_id')
-    match = dict()
-    match['manufacture_unit_id_str'] = manufacture_unit_id
-    if industry_id != None and industry_id != "":
-        match['industry_id_str'] = industry_id
-    pipeline =[
+
+    match = {"manufacture_unit_id_str": manufacture_unit_id}
+    if industry_id:
+        match["industry_id_str"] = industry_id
+
+    pipeline = [
+        {"$match": match},
         {
-            "$match" : match
+            "$lookup": {
+                "from": "product",
+                "let": {"brand_id": "$_id"},
+                "pipeline": [
+                    {"$match": {"$expr": {"$eq": ["$brand_id", "$$brand_id"]}}},
+                    {"$count": "total_count"},
+                ],
+                "as": "products_count",
+            }
         },
         {
-           "$project" :{
-            "_id":0,
-            "id" : {"$toString" : "$_id"},
-            "name" : 1
-           }
-        }
+            "$addFields": {
+                "products_count": {
+                    "$arrayElemAt": ["$products_count.total_count", 0],
+                }
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": 1,
+                "products_count": {"$ifNull": ["$products_count", 0]},
+            }
+        },
     ]
-    product_list = list(brand.objects.aggregate(*(pipeline)))
-    return product_list
+
+    brand_list = list(brand.objects.aggregate(*pipeline))
+    return brand_list
+
 
 @csrf_exempt
 def obtainProductsList(request):
@@ -368,7 +388,9 @@ def obtainProductsListForDealer(request):
     sort_by = request.GET.get('sort_by')
     sort_by_value = request.GET.get('sort_by_value')
 
-    brand_id = request.GET.get('brand_id')
+    brand_id_list = request.GET.get('brand_id_list')
+    if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+        brand_id_list = [ObjectId(ins) for ins in brand_id_list]
     price_from = request.GET.get('price_from')
     price_to = request.GET.get('price_to')
 
@@ -427,8 +449,8 @@ def obtainProductsListForDealer(request):
             }
             ]
         price_match = dict()
-        if brand_id != None and brand_id != "":
-            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+            price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
             price_match['list_price'] = {
                 "$gte": int(price_from),
@@ -576,8 +598,8 @@ def obtainProductsListForDealer(request):
             }
         ]
         price_match = dict()
-        if brand_id != None and brand_id != "":
-            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+            price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
             price_match['product_ins.list_price'] = {
                 "$gte": int(price_from),
