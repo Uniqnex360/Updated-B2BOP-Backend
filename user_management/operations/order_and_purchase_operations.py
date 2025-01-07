@@ -13,6 +13,22 @@ import pandas as pd
 from b2bop_project.crud import DatabaseModel
 from datetime import datetime, timedelta
 import threading
+from user_management.operations.user_operations import getAddressFormat
+import pytz
+from tzlocal import get_localzone
+
+
+
+def getLocalTime(current_time):
+    # Automatically detect the local timezone
+    local_timezone = get_localzone()
+
+    # Convert the UTC time to local time
+    local_time = current_time.astimezone(local_timezone)
+
+    # Format the datetime to only show the date and time (without microseconds)
+    formatted_time = local_time.strftime("%Y-%m-%d %H:%M:%S")
+    return formatted_time
 
 
 @csrf_exempt
@@ -603,12 +619,35 @@ def createOrder(request):
         balance_quantity = cart_ins['product_quantity'] - cart_ins['quantity']
         availability = True if balance_quantity > 0 else False
         DatabaseModel.update_documents(product.objects,{"id" : cart_ins['product_id']},{"quantity" : balance_quantity,"availability" : availability})
-
+    sendMailWhenOrderPlaced(customer_id,order_obj)
     data['is_created'] = True
     data['order_id'] = str(order_obj.id)  
         
     return data
-from user_management.operations.user_operations import getAddressFormat
+
+
+def sendMailWhenOrderPlaced(user_id, order_obj):
+    #*Items Ordered: {items_list}
+    
+    user_obj = DatabaseModel.get_document(user.objects,{"id" : user_id},['first_name',"last_name",'email','manufacture_unit_id'])
+
+    manufacturer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
+
+
+    admin_obj = DatabaseModel.get_document(user.objects,{"manufacture_unit_id" : user_obj.manufacture_unit_id.id,"role_id" : manufacturer_admin_role_id},['email','first_name','last_name'])
+
+    current_time = getLocalTime(datetime.now())
+
+    new_order_placed_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "new_order_placed","manufacture_unit_id_str" : str(user_obj.manufacture_unit_id.id)})
+
+    subject = new_order_placed_template_obj.subject.format(order_id=order_obj.order_id)
+
+    body = new_order_placed_template_obj.default_template.format(seller_name=f"{admin_obj.first_name} {admin_obj.last_name or ''}".strip(), order_id=order_obj.order_id, buyer_name=f"{user_obj.first_name} {user_obj.last_name or ''}".strip(),total_amount=order_obj.amount,order_date=current_time,currency=order_obj.currency)
+    
+    send_email(admin_obj.email, subject, body)
+
+
+
 
 def obtainUserDetails(request):
     data = dict()
@@ -685,6 +724,9 @@ def obtainOrderListForDealer(request):
     delivery_status = json_request['delivery_status']
     fulfilled_status = json_request['fulfilled_status']
     payment_status = json_request['payment_status']
+    is_reorder = json_request.get('is_reorder')
+
+    print("is_reorder",is_reorder)
 
     status_match = {}
     status_match['customer_id'] = ObjectId(user_id)
@@ -694,6 +736,12 @@ def obtainOrderListForDealer(request):
         status_match['fulfilled_status'] = fulfilled_status
     if payment_status != "all":
         status_match['payment_status'] = payment_status
+    if is_reorder != None and is_reorder != "" and is_reorder != "all":
+        is_reorder = is_reorder.lower()
+        if is_reorder == "yes":
+            status_match['is_reorder'] = True
+        elif is_reorder == "no":
+            status_match['is_reorder'] = False
 
     pipeline = [
     {"$match": status_match},  
@@ -708,7 +756,8 @@ def obtainOrderListForDealer(request):
             "fulfilled_status" : 1,
             "payment_status" : 1,
             "amount" : 1,
-            "currency" :1
+            "currency" :1,
+            "is_reorder" : 1
         }
     }
     ]
@@ -805,19 +854,7 @@ def getManufactureBankDetails(request):
     return data    
 
 
-import pytz
-from tzlocal import get_localzone
 
-def getLocalTime(current_time):
-    # Automatically detect the local timezone
-    local_timezone = get_localzone()
-
-    # Convert the UTC time to local time
-    local_time = current_time.astimezone(local_timezone)
-
-    # Format the datetime to only show the date and time (without microseconds)
-    formatted_time = local_time.strftime("%Y-%m-%d %H:%M:%S")
-    return formatted_time
 
 from .user_operations import send_email
 @csrf_exempt
@@ -1628,7 +1665,7 @@ def createReorder(request):
         balance_quantity = cart_ins['product_quantity'] - cart_ins['quantity']
         availability = True if balance_quantity > 0 else False
         DatabaseModel.update_documents(product.objects,{"id" : cart_ins['product_id']},{"quantity" : balance_quantity,"availability" : availability})
-
+    sendMailWhenOrderPlaced(customer_id,order_obj)
     data['is_created'] = True
     data['order_id'] = str(order_obj.id)  
         

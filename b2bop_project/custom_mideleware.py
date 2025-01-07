@@ -69,7 +69,7 @@ def skip_for_paths():
     """
     def decorator(f):
         def check_if_health(self, request):
-            l = ["loginUser","exportOrders"]
+            l = ["loginUser","exportOrders","forgotPassword",'changePassword']
             k = request.path.split("/")
             for i in k:
                 if i in  l:

@@ -1,16 +1,11 @@
-from django.shortcuts import render
 from user_management.models import *
 from django.http import JsonResponse
-from b2bop_project.custom_mideleware import SIMPLE_JWT, createJsonResponse, createCookies,obtainManufactureIdFromToken, obtainUserIdFromToken, obtainUserRoleFromToken
-from rest_framework.decorators import api_view
-from django.middleware import csrf
+from b2bop_project.custom_mideleware import SIMPLE_JWT
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.parsers import JSONParser
-import jwt
 from bson import ObjectId
 import pandas as pd
 from b2bop_project.crud import DatabaseModel
-import math
 import ast
 
 
@@ -696,57 +691,67 @@ def productCountForDealer(request):
         total_count_result = list(product.objects.aggregate(*(count_pipeline)))
         total_count = total_count_result[0]['total_count'] if total_count_result else 0
     elif product_category_id != None and product_category_id != "":
-        match = {}
-        match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-        match['product_ins.visible'] = True
-        if filters is not None and filters != "all" and filters != "":
-            match['product_ins.availability'] = True if filters == "true" else False
+        # match = {}
+        # match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+        # match['product_ins.visible'] = True
+        # if filters is not None and filters != "all" and filters != "":
+        #     match['product_ins.availability'] = True if filters == "true" else False
 
+        # pipeline = [
+        #     {
+        #         "$match": {
+        #             "_id": ObjectId(product_category_id)
+        #         }
+        #     },
+        #     {
+        #         "$graphLookup": {
+        #             "from": "product_category",
+        #             "startWith": "$_id",
+        #             "connectFromField": "_id",
+        #             "connectToField": "parent_category_id",
+        #             "as": "all_categories",
+        #             "maxDepth": 5
+        #         }
+        #     },
+        #     {
+        #         "$project": {
+        #             "category_ids": {
+        #                 "$map": {
+        #                     "input": "$all_categories",
+        #                     "as": "category",
+        #                     "in": "$$category._id"
+        #                 }
+        #             }
+        #         }
+        #     },
+        #     {"$unwind": "$category_ids"},
+        #     {
+        #         "$lookup": {
+        #             "from": "product",
+        #             "localField": "category_ids",
+        #             "foreignField": "category_id",
+        #             "as": "product_ins"
+        #         }
+        #     },
+        #     {"$unwind": "$product_ins"},
+        #     {
+        #         "$match": match
+        #     },
+        #     {
+        #         "$count": "total_products"
+        #     }
+        # ]
+        # total_count_result = list(product_category.objects.aggregate(*(pipeline)))
         pipeline = [
-            {
-                "$match": {
-                    "_id": ObjectId(product_category_id)
-                }
-            },
-            {
-                "$graphLookup": {
-                    "from": "product_category",
-                    "startWith": "$_id",
-                    "connectFromField": "_id",
-                    "connectToField": "parent_category_id",
-                    "as": "all_categories",
-                    "maxDepth": 5
-                }
-            },
-            {
-                "$project": {
-                    "category_ids": {
-                        "$map": {
-                            "input": "$all_categories",
-                            "as": "category",
-                            "in": "$$category._id"
-                        }
-                    }
-                }
-            },
-            {"$unwind": "$category_ids"},
-            {
-                "$lookup": {
-                    "from": "product",
-                    "localField": "category_ids",
-                    "foreignField": "category_id",
-                    "as": "product_ins"
-                }
-            },
-            {"$unwind": "$product_ins"},
             {
                 "$match": match
             },
+            
             {
                 "$count": "total_products"
             }
         ]
-        total_count_result = list(product_category.objects.aggregate(*(pipeline)))
+        total_count_result = list(product.objects.aggregate(*(pipeline)))
         total_count = total_count_result[0]['total_products'] if total_count_result else 0
 
     return total_count
@@ -1421,6 +1426,7 @@ def productSearch(request):
             "$match": {
                 "$or": [
                     {"brand_info.name": {"$regex": search_query, "$options": "i"}},
+                    {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}},
                     {"sku_number_product_code_item_number": {"$regex": search_query, "$options": "i"}},
                     {"mpn": {"$regex": search_query, "$options": "i"}},
                     {"model": {"$regex": search_query, "$options": "i"}},
@@ -1428,7 +1434,6 @@ def productSearch(request):
                     {"product_name": {"$regex": f'^{search_query}$', "$options": "i"}},
                     # {"brand_info.name": {"$regex": search_query, "$options": "i"}},
                     {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
-                    {"breadcrumbs.name": {"$regex": search_query, "$options": "i"}},
                     {
                         "$expr": {
                             "$gt": [
@@ -1527,34 +1532,6 @@ def productSearch(request):
         {
             "$project": {
                 "_id": 0,
-                # "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", ""]},
-                # "product_name": {"$ifNull": ["$product_name", ""]},
-                # "brand_name": {"$ifNull": ["$brand_name", ""]},
-                # "price": {"$ifNull": ["$list_price", ""]},
-                # "was_price": {"$ifNull": ["$was_price", ""]},
-                # "discount": {"$ifNull": ["$discount", ""]},
-                # "currency": {"$ifNull": ["$currency", ""]},
-                # "quantity": {"$ifNull": ["$quantity", ""]},
-                # "availability": {"$ifNull": ["$availability", ""]},
-                # "return_applicable": {"$ifNull": ["$return_applicable", ""]},
-                # "images": {"$ifNull": ["$images", []]},
-                # "features": {"$ifNull": ["$features", []]},
-                # "tags": {"$ifNull": ["$tags", []]},
-                # "attributes" : "$attributes",
-                # # "brand_info": {
-                # #     "name": {"$arrayElemAt": [{"$ifNull": ["$brand_info.name", ["N/A"]]}, 0]},
-                # #     "logo": {"$arrayElemAt": [{"$ifNull": ["$brand_info.logo", ["N/A"]]}, 0]}
-                # # },
-                # # "vendor_info": {
-                # #     "name": {"$arrayElemAt": [{"$ifNull": ["$vendor_info.name", ["N/A"]]}, 0]}
-                # # },
-                # "breadcrumbs": {
-                #     "$map": {
-                #         "input": "$breadcrumbs",
-                #         "as": "breadcrumb",
-                #         "in": "$$breadcrumb.name"
-                #     }
-                # }
                 "id" : {"$toString" : "$_id"},
                 "name" : "$product_name",
                 "product_name" : "$product_name",

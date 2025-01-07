@@ -19,6 +19,8 @@ from openpyxl.drawing.image import Image
 from io import BytesIO
 import base64
 from PIL import Image as PILImage
+from datetime import datetime, timedelta
+
 
 
 @api_view(('GET', 'POST'))
@@ -30,6 +32,7 @@ def loginUser(request):
     valid = False
     if user_data_obj:
         user_data_obj = user_data_obj[0]
+        DatabaseModel.update_documents(user.objects,{"id" : user_data_obj.id},{'last_login' : datetime.now()})
         manufacture_unit_id = ''
         role_name = user_data_obj.role_id.name
         if role_name != "super_admin":
@@ -66,6 +69,80 @@ def loginUser(request):
         response.data['data']['role'] = ""
         response.data['_c1'] = ''
     return response
+
+
+@csrf_exempt
+def forgotPassword(request):
+    data = dict()
+    if request.method == 'POST':
+        json_req = JSONParser().parse(request)
+        email = json_req['email']
+        otp = random.randint(100000, 999999)
+        user_obj = DatabaseModel.get_document(user.objects,{"email" : email},['id','first_name','last_name'])
+        if user_obj != None:
+            DatabaseModel.update_documents(user.objects,{'id' : user_obj.id},{"otp" : otp, 'otp_generated_time' : datetime.now()})
+            name = f"{user_obj.first_name} {user_obj.last_name}"
+
+            subject = "Reset Your Password - B2B-OP"
+            body = f"""Dear {name},
+
+                        We received a request to reset your password for your account at B2B-OP.
+
+                        To reset your password, please click the link below:
+
+                        [Password Reset URL]
+
+                        If you did not request this change or believe this was a mistake, please ignore this email. Your password will not be changed unless you click the link above.
+
+                        For your security, the link will expire in 15 minutes.
+
+                        If you need further assistance, feel free to contact our support team
+
+                        Best regards,  
+                        B2B-OP  
+                        https://b2bop.netlify.app/
+                        """
+            send_email(json_req['email'].lower(), subject, body)
+            data['status'] = True
+            data['message'] = "otp send to your email"
+            data['user_id'] = str(user_obj.id)
+        else:
+            data['status'] = False
+            data['message'] = "The email address you provided does not exist in our database."
+            data['user_id'] = ""
+    return JsonResponse((data), safe=False)
+
+@csrf_exempt
+def changePassword(request):
+    data = dict()
+    data['status'] = False
+    if request.method == 'POST':
+        json_req = JSONParser().parse(request)
+        user_id = json_req['user_id']
+        otp = json_req['otp']
+        password = json_req['password']
+        user_obj = DatabaseModel.get_document(user.objects,{"user_id" : user_id},['otp','otp_generated_time'])
+        if user_obj != None:
+            current_time = datetime.now()
+
+            # Check if the time difference is less than 15 minutes
+            time_limit = timedelta(minutes=15)
+
+            # Check if the difference is within 15 minutes
+            is_within_15_minutes = datetime.now() - current_time <= time_limit
+
+            if otp == user_obj.otp and is_within_15_minutes == True:
+                DatabaseModel.update_documents(user.objects,{"id" : user_id},{"password" : password})
+                data['status'] = True
+                data['message'] = "Password Changed Sucessfully"
+            else:
+                if otp == user_obj.otp and is_within_15_minutes == False:
+                    data['message'] = "OTP is expired. Please request a new one."
+                else:
+                    data['message'] = "OTP is invalid. Insert the correct OTP or request a new one"
+        else:
+            data['message'] = "User does not exists"
+    return JsonResponse((data), safe=False)
 
 def saveDefaultMailTemplateForManufactureUnit(manufacture_unit_id):
     pipeline = [
@@ -1037,7 +1114,7 @@ def obtainDashboardDetailsForManufactureAdmin(request):
     {
         "$sort" : {"units_sold" : -1}
     },
-    {"$limit" : 10}
+    {"$limit" : 5}
     ]
     data['top_selling_categorys'] = list(top_selling_category.objects.aggregate(*(pipeline)))
     
@@ -1071,7 +1148,7 @@ def obtainDashboardDetailsForManufactureAdmin(request):
         {
             "$match": {
                 "manufacture_unit_id_str" : manufacture_unit_id,
-                "payment_status": {"$in" : ["Pending", "Paid", "Failed" ]}
+                "payment_status": "Pending"
             }
         },
         {
@@ -1080,6 +1157,20 @@ def obtainDashboardDetailsForManufactureAdmin(request):
     ]
     pending_order_count_result = list(order.objects.aggregate(*(pipeline)))
     data['pending_order_count'] = pending_order_count_result[0]['total_count'] if pending_order_count_result else 0
+
+    pipeline = [
+        {
+            "$match": {
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "payment_status": "Failed"
+            }
+        },
+        {
+            "$count": "total_count"
+    }
+    ]
+    failed_order_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['failed_order_count'] = failed_order_count_result[0]['total_count'] if failed_order_count_result else 0
 
     return data
 
@@ -1245,7 +1336,7 @@ def obtainDashboardDetailsForDealer(request):
     {
         "$sort" : {"units_sold" : -1}
     },
-    {"$limit" : 10}
+    {"$limit" : 5}
     ]
     data['top_selling_brands'] = list(top_selling_brand.objects.aggregate(*(pipeline)))
 
@@ -1271,7 +1362,7 @@ def obtainDashboardDetailsForDealer(request):
     {
         "$sort" : {"units_sold" : -1}
     },
-    {"$limit" : 10}
+    {"$limit" : 5}
     ]
     data['top_selling_categorys'] = list(top_selling_category.objects.aggregate(*(pipeline)))
 
@@ -1294,7 +1385,7 @@ def obtainDashboardDetailsForDealer(request):
             "$match": {
                 "customer_id" : ObjectId(user_id),
                 "manufacture_unit_id_str" : manufacture_unit_id,
-                "payment_status": {"$in" : ["Pending", "Failed" ]}
+                "payment_status": "Pending"
             }
         },
         {
@@ -1303,6 +1394,21 @@ def obtainDashboardDetailsForDealer(request):
     ]
     pending_order_count_result = list(order.objects.aggregate(*(pipeline)))
     data['pending_order_count'] = pending_order_count_result[0]['total_count'] if pending_order_count_result else 0
+
+    pipeline = [
+        {
+            "$match": {
+                "customer_id" : ObjectId(user_id),
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "payment_status": "Failed"
+            }
+        },
+        {
+            "$count": "total_count"
+    }
+    ]
+    failed_order_count_result = list(order.objects.aggregate(*(pipeline)))
+    data['failed_order_count'] = failed_order_count_result[0]['total_count'] if failed_order_count_result else 0
 
     pipeline = [
         {
@@ -1750,3 +1856,69 @@ def obtainDashboardDetailsForSuperAdmin(request):
 
     return data
 
+
+
+from django_cron import CronJobBase, Schedule
+
+class CheckPendingOrders(CronJobBase):
+    RUN_AT_TIMES = ['03:00']  # every day at 3 AM UTC
+
+    schedule = Schedule(run_at_times=RUN_AT_TIMES)
+    code = 'user_management.check_pending_orders'  # a unique code
+
+    def do(self):
+        now = datetime.now()
+        time_threshold = now - timedelta(hours=24)
+        
+        pipeline = [
+            {
+                "$match": {
+                    "payment_status": "Pending",
+                    "creation_date": {"$lte": time_threshold}
+                }
+            },
+            {
+                "$lookup": {
+                    "from": "user",
+                    "localField": "customer_id",
+                    "foreignField": "_id",
+                    "as": "user_ins"
+                }
+            },
+            {"$unwind": "$user_ins"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "order_id": 1,
+                    "amount": 1,
+                    "currency": 1,
+                    "user_email": "$user_ins.email",
+                    "user_name": {
+                        "$concat": [
+                            "$user_ins.first_name",
+                            {"$cond": {"if": {"$ne": ["$user_ins.last_name", None]}, "then": " ", "else": ""}},
+                            {"$ifNull": ["$user_ins.last_name", ""]}
+                        ]
+                    }
+                }
+            }
+        ]
+
+        pending_orders = list(order.objects.aggregate(*pipeline))
+        
+        for order_ins in pending_orders:
+            subject = "Reminder: Pending Payment for Your Order"
+            body = f"""Dear {order_ins['user_name']},
+
+                        This is a reminder that your order with ID {order_ins['order_id']} is still pending payment.
+
+                        Order Amount: {order_ins['amount']} {order_ins['currency']}
+
+                        Please complete the payment to proceed with your order.
+
+                        If you have already paid, please ignore this email.
+
+                        Best regards,
+                        B2B-OP Team
+                        """
+            send_email(order_ins['user_email'], subject, body)

@@ -71,6 +71,9 @@ class user(Document):
     website = fields.StringField()
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
+    otp = fields.IntField()
+    otp_generated_time = fields.DateTimeField(default=datetime.now())
+    last_login = fields.DateTimeField(default=datetime.now())
 
     def clean(self):
         # Ensure unique dealer_id
@@ -235,6 +238,7 @@ class order(Document):
     manufacture_unit_id_str = fields.StringField()
     is_reorder = fields.BooleanField(default=False)
     industry_id_str = fields.StringField()
+    shipping_from = fields.ReferenceField(address)
 
 
 
