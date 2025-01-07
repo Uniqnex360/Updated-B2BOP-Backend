@@ -1858,67 +1858,67 @@ def obtainDashboardDetailsForSuperAdmin(request):
 
 
 
-from django_cron import CronJobBase, Schedule
+# from django_cron import CronJobBase, Schedule
 
-class CheckPendingOrders(CronJobBase):
-    RUN_AT_TIMES = ['03:00']  # every day at 3 AM UTC
+# class CheckPendingOrders(CronJobBase):
+#     RUN_AT_TIMES = ['03:00']  # every day at 3 AM UTC
 
-    schedule = Schedule(run_at_times=RUN_AT_TIMES)
-    code = 'user_management.check_pending_orders'  # a unique code
+#     schedule = Schedule(run_at_times=RUN_AT_TIMES)
+#     code = 'user_management.check_pending_orders'  # a unique code
 
-    def do(self):
-        now = datetime.now()
-        time_threshold = now - timedelta(hours=24)
+#     def do(self):
+#         now = datetime.now()
+#         time_threshold = now - timedelta(hours=24)
         
-        pipeline = [
-            {
-                "$match": {
-                    "payment_status": "Pending",
-                    "creation_date": {"$lte": time_threshold}
-                }
-            },
-            {
-                "$lookup": {
-                    "from": "user",
-                    "localField": "customer_id",
-                    "foreignField": "_id",
-                    "as": "user_ins"
-                }
-            },
-            {"$unwind": "$user_ins"},
-            {
-                "$project": {
-                    "_id": 0,
-                    "order_id": 1,
-                    "amount": 1,
-                    "currency": 1,
-                    "user_email": "$user_ins.email",
-                    "user_name": {
-                        "$concat": [
-                            "$user_ins.first_name",
-                            {"$cond": {"if": {"$ne": ["$user_ins.last_name", None]}, "then": " ", "else": ""}},
-                            {"$ifNull": ["$user_ins.last_name", ""]}
-                        ]
-                    }
-                }
-            }
-        ]
+#         pipeline = [
+#             {
+#                 "$match": {
+#                     "payment_status": "Pending",
+#                     "creation_date": {"$lte": time_threshold}
+#                 }
+#             },
+#             {
+#                 "$lookup": {
+#                     "from": "user",
+#                     "localField": "customer_id",
+#                     "foreignField": "_id",
+#                     "as": "user_ins"
+#                 }
+#             },
+#             {"$unwind": "$user_ins"},
+#             {
+#                 "$project": {
+#                     "_id": 0,
+#                     "order_id": 1,
+#                     "amount": 1,
+#                     "currency": 1,
+#                     "user_email": "$user_ins.email",
+#                     "user_name": {
+#                         "$concat": [
+#                             "$user_ins.first_name",
+#                             {"$cond": {"if": {"$ne": ["$user_ins.last_name", None]}, "then": " ", "else": ""}},
+#                             {"$ifNull": ["$user_ins.last_name", ""]}
+#                         ]
+#                     }
+#                 }
+#             }
+#         ]
 
-        pending_orders = list(order.objects.aggregate(*pipeline))
+#         pending_orders = list(order.objects.aggregate(*pipeline))
         
-        for order_ins in pending_orders:
-            subject = "Reminder: Pending Payment for Your Order"
-            body = f"""Dear {order_ins['user_name']},
+#         for order_ins in pending_orders:
+#             subject = "Reminder: Pending Payment for Your Order"
+#             body = f"""Dear {order_ins['user_name']},
 
-                        This is a reminder that your order with ID {order_ins['order_id']} is still pending payment.
+#                         This is a reminder that your order with ID {order_ins['order_id']} is still pending payment.
 
-                        Order Amount: {order_ins['amount']} {order_ins['currency']}
+#                         Order Amount: {order_ins['amount']} {order_ins['currency']}
 
-                        Please complete the payment to proceed with your order.
+#                         Please complete the payment to proceed with your order.
 
-                        If you have already paid, please ignore this email.
+#                         If you have already paid, please ignore this email.
 
-                        Best regards,
-                        B2B-OP Team
-                        """
-            send_email(order_ins['user_email'], subject, body)
+#                         Best regards,
+#                         B2B-OP Team
+#                         """
+#             send_email(order_ins['user_email'], subject, body)
