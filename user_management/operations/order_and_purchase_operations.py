@@ -183,6 +183,7 @@ def obtainOrderList(request):
     fulfilled_status = json_request['fulfilled_status']
     payment_status = json_request['payment_status']
     industry_id_str = json_request.get('industry_id')
+    is_reorder = json_request.get('is_reorder')
 
     
     status_match = {}
@@ -195,6 +196,12 @@ def obtainOrderList(request):
         status_match['payment_status'] = payment_status
     if industry_id_str != None:
         status_match['industry_id_str'] = industry_id_str
+    if is_reorder != None and is_reorder != "" and is_reorder != "all":
+        is_reorder = is_reorder.lower()
+        if is_reorder == "yes":
+            status_match['is_reorder'] = True
+        elif is_reorder == "no":
+            status_match['is_reorder'] = False
 
 
     # print("status_match",status_match,"\n\n\n\n")
@@ -297,7 +304,8 @@ def obtainOrderList(request):
                 },
                 "delivery_status" : 1,
                 "fulfilled_status" : 1,
-                "payment_status" : 1
+                "payment_status" : 1,
+                "is_reorder" : 1
            }
         }]
     pipeline.extend(project_obj)
