@@ -130,9 +130,9 @@ def obtainbrandList(request):
     industry_id = request.GET.get('industry_id')
     role_name = request.GET.get('role_name')
     if role_name != None and role_name != "":
-        match = {"$match": {"$expr": {"$eq": ["$brand_id", "$$brand_id"]}}}
+        match_obj = {"$match": {"$expr": {"$eq": ["$brand_id", "$$brand_id"]}}}
     else:
-        match = {
+        match_obj = {
         "$match": {
             "$and": [
             { "$expr": { "$eq": ["$brand_id", "$$brand_id"] } },
@@ -152,7 +152,7 @@ def obtainbrandList(request):
                 "from": "product",
                 "let": {"brand_id": "$_id"},
                 "pipeline": [
-                    {"$match": {"$expr": {"$eq": ["$brand_id", "$$brand_id"]}}},
+                    match_obj,
                     {"$count": "total_count"},
                 ],
                 "as": "products_count",
