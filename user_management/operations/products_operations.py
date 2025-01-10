@@ -128,6 +128,18 @@ def obtainProductCategoryListForDealer(request):
 def obtainbrandList(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     industry_id = request.GET.get('industry_id')
+    role_name = request.GET.get('role_name')
+    if role_name != None and role_name != "":
+        match = {"$match": {"$expr": {"$eq": ["$brand_id", "$$brand_id"]}}}
+    else:
+        match = {
+        "$match": {
+            "$and": [
+            { "$expr": { "$eq": ["$brand_id", "$$brand_id"] } },
+            { "visible": True }
+            ]
+        }
+        }
 
     match = {"manufacture_unit_id_str": manufacture_unit_id}
     if industry_id:
