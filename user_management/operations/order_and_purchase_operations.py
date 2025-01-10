@@ -898,11 +898,18 @@ def conformPayment(request):
 
     subject = payment_under_review_template_obj.subject
 
-    body = payment_under_review_template_obj.default_template.format(name=user_obj.first_name, order_id=order_obj.order_id)
+    body = payment_under_review_template_obj.default_template.format(name=f"{user_obj.first_name} {user_obj.last_name or ''}".strip(), order_id=order_obj.order_id)
     
     send_email(user_obj.email, subject, body)
 
-    admin_obj = DatabaseModel.get_document(user.objects,{"manufacture_unit_id" : user_obj.manufacture_unit_id.id,"role_id" : ObjectId('670e3b206569d56ed4d4a759')},['email','first_name'])
+    manufacturer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
+
+
+    admin_obj = DatabaseModel.get_document(user.objects,{"manufacture_unit_id" : user_obj.manufacture_unit_id.id,"role_id" : manufacturer_admin_role_id},['email','first_name','last_name'])
+
+
+
+
 
     current_time = getLocalTime(datetime.now())
 
@@ -910,7 +917,7 @@ def conformPayment(request):
 
     subject = payment_confirmation_obj.subject.format(order_id=order_obj.order_id)
 
-    body = payment_confirmation_obj.default_template.format(name=admin_obj.first_name,order_id=order_obj.order_id, first_name=user_obj.first_name, transaction_id = transaction_id, total_amount= total_amount, current_time = current_time)
+    body = payment_confirmation_obj.default_template.format(name=f"{admin_obj.first_name} {admin_obj.last_name or ''}".strip(),order_id=order_obj.order_id, first_name=user_obj.first_name, transaction_id = transaction_id, total_amount= total_amount, current_time = current_time)
     send_email(admin_obj.email, subject, body)
 
     

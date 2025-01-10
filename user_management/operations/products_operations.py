@@ -7,6 +7,7 @@ from bson import ObjectId
 import pandas as pd
 from b2bop_project.crud import DatabaseModel
 import ast
+from spellchecker import SpellChecker
 
 
 def obtainProductCategoryList(request):
@@ -371,23 +372,24 @@ def obtainProductsList(request):
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
-
+@csrf_exempt
 def obtainProductsListForDealer(request):
-    product_category_id = request.GET.get('product_category_id')
-    manufacture_unit_id = request.GET.get('manufacture_unit_id')
-    industry_id_str = request.GET.get('industry_id')
-    skip = int(request.GET.get("skip"))
-    limit = int(request.GET.get("limit"))
+    json_request = JSONParser().parse(request)
+    product_category_id = json_request.get('product_category_id')
+    manufacture_unit_id = json_request.get('manufacture_unit_id')
+    industry_id_str = json_request.get('industry_id')
+    skip = int(json_request.get("skip"))
+    limit = int(json_request.get("limit"))
 
-    filters = request.GET.get('filters')
-    sort_by = request.GET.get('sort_by')
-    sort_by_value = request.GET.get('sort_by_value')
+    filters = json_request.get('filters')
+    sort_by = json_request.get('sort_by')
+    sort_by_value = json_request.get('sort_by_value')
 
-    brand_id_list = request.GET.get('brand_id_list')
+    brand_id_list = json_request.get('brand_id_list')
     if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
         brand_id_list = [ObjectId(ins) for ins in brand_id_list]
-    price_from = request.GET.get('price_from')
-    price_to = request.GET.get('price_to')
+    price_from = json_request.get('price_from')
+    price_to = json_request.get('price_to')
 
     match = {}
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
@@ -658,15 +660,17 @@ def obtainProductsListForDealer(request):
 
     return product_list
 
+@csrf_exempt
 def productCountForDealer(request):
-    product_category_id = request.GET.get('product_category_id')
-    manufacture_unit_id = request.GET.get('manufacture_unit_id')
-    filters = request.GET.get('filters')
-    industry_id_str = request.GET.get('industry_id')
+    json_request = JSONParser().parse(request)
+    product_category_id = json_request.get('product_category_id')
+    manufacture_unit_id = json_request.get('manufacture_unit_id')
+    filters = json_request.get('filters')
+    industry_id_str = json_request.get('industry_id')
+    brand_id_list = json_request.get('brand_id_list')
+    
 
-    match = {}
-    match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-    match['visible'] = True
+    match = {"manufacture_unit_id" : ObjectId(manufacture_unit_id),"visible" : True}
 
     if product_category_id != None and product_category_id != "":
         match['category_id'] = ObjectId(product_category_id)
@@ -674,6 +678,9 @@ def productCountForDealer(request):
         match['availability'] = True if filters == "true" else False
     if industry_id_str != None and industry_id_str != "":
         match['industry_id_str'] = industry_id_str
+    if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+        brand_id_list = [ObjectId(ins) for ins in brand_id_list]
+        match['brand_id'] = {"$in": brand_id_list}
     
     
     if product_category_id == "":
@@ -1352,6 +1359,17 @@ def save_file(request):
                 i['product_obj']['vendor_id'] = vendor_id 
             i['product_obj']['category_id'] = category_id
             i['product_obj']['industry_id_str'] = industry_id_str
+
+            # Ensure no keys contain '.'
+            def sanitize_keys(d):
+                if isinstance(d, dict):
+                    return {k.replace('.', '_'): sanitize_keys(v) for k, v in d.items()}
+                elif isinstance(d, list):
+                    return [sanitize_keys(i) for i in d]
+                else:
+                    return d
+
+            i['product_obj'] = sanitize_keys(i['product_obj'])
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
         else:
             if allow_duplicate != None and allow_duplicate == True:
@@ -1384,7 +1402,9 @@ def productSearch(request):
     skip = json_request.get("skip")
     limit = json_request.get("limit")
     product_category_id = request.GET.get('product_category_id')
-
+    search_query = search_query.strip()
+    spell = SpellChecker()
+    search_query = ' '.join([spell.correction(word) for word in search_query.split()])
     match = dict()
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
     if role_name != None:
