@@ -639,9 +639,10 @@ def getAddressFormat(address_id):
             }
             ]
     address_obj = list(address.objects.aggregate(*(pipeline)))
-        
-    return address_obj[0] 
-
+    if address_obj != []:
+        return address_obj[0] 
+    else:
+        return {}
 
 
 def getBankDetailsFormat(bank_details_id):
@@ -669,7 +670,9 @@ def getBankDetailsFormat(bank_details_id):
             }
             ]
     bank_details_obj = list(bank_details.objects.aggregate(*(pipeline)))
-    return bank_details_obj[0] 
+    if bank_details_obj != []:
+        return bank_details_obj[0]
+    return {} 
 
 
 def obtainUserDetailsForProfile(request):
@@ -705,22 +708,37 @@ def obtainUserDetailsForProfile(request):
     if user_obj != []:
         if user_obj[0]['default_address_id'] != None:
             default_add = getAddressFormat(user_obj[0]['default_address_id'])
-            address_obj_list.append(default_add)
+            if default_add != {}:
+                address_obj_list.append(default_add)
+            else:
+                DatabaseModel.update_documents(user.objects,{"id" : user_id},{"unset__default_address_id" : user_obj[0]['default_address_id']})
 
 
         if user_obj[0]['address_id_list'] != []:
             for i in user_obj[0]['address_id_list']:
-               address_obj_list.append(getAddressFormat(i))
-        
+                temp_add = getAddressFormat(i)
+                if temp_add != {}:
+                    address_obj_list.append(temp_add)
+                else:
+                    DatabaseModel.update_documents(user.objects,{"id" : user_id},{"pull__address_id_list" : i})
+
         if user_obj[0]['ware_house_id_list'] != []:
             for i in user_obj[0]['ware_house_id_list']:
-               ware_house_obj_list.append(getAddressFormat(i))
+                temp_war = getAddressFormat(i)
+                if temp_war != {}:
+                    ware_house_obj_list.append(temp_war)
+                else:
+                    DatabaseModel.update_documents(user.objects,{"id" : user_id},{"pull__ware_house_id_list" : i})
+                
 
 
         if user_obj[0]['bank_details_id_list'] != []:
             for i in user_obj[0]['bank_details_id_list']:
-               bank_details_obj_list.append(getBankDetailsFormat(i))
-
+                temp_bank = getBankDetailsFormat(i)
+                if temp_bank != {}:
+                    bank_details_obj_list.append(temp_bank)
+                else:
+                    DatabaseModel.update_documents(user.objects,{"id" : user_id},{"pull__bank_details_id_list" : i})
         
         user_obj[0]['address_obj_list'] = address_obj_list
         user_obj[0]['bank_details_obj_list'] = bank_details_obj_list
@@ -765,6 +783,7 @@ def createOrUpdateBank(bank_obj):
 def updateUserProfile(request):
     data = dict()
     json_request = JSONParser().parse(request)
+    print('updateUserProfile',json_request,"\n\n\n")
     user_id =  json_request.get('user_id')
     user_obj = json_request['user_obj']
     # del user_obj['age']
