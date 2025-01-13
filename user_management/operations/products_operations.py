@@ -13,7 +13,6 @@ from mongoengine import DoesNotExist
 
 
 # def obtainProductCategoryList(request):
-
 #     # Retrieve parameters from the request
 #     manufacture_unit_id = request.GET.get('manufacture_unit_id')
 #     product_category_id = request.GET.get('product_category_id')
@@ -342,7 +341,7 @@ def obtainbrandList(request):
     # Always match on brand_id using the variable from 'let'
     lookup_match_conditions.append({"$expr": {"$eq": ["$brand_id", "$$brand_id"]}})
     # If role_name is not provided, include 'visible': True
-    if not role_name:
+    if not role_name or role_name != "manufacturer_admin":
         lookup_match_conditions.append({"visible": True})
 
     # Handle product_category_id
