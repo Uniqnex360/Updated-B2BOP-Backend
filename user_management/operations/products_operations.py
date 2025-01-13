@@ -8,15 +8,131 @@ import pandas as pd
 from b2bop_project.crud import DatabaseModel
 import ast
 from spellchecker import SpellChecker
+from mongoengine import DoesNotExist
+
+
+
+# def obtainProductCategoryList(request):
+
+#     # Retrieve parameters from the request
+#     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+#     product_category_id = request.GET.get('product_category_id')
+#     industry_id_str = request.GET.get('industry_id')
+
+#     # If product_category_id is None, return level 1 categories
+#     if not product_category_id:
+#         match = {
+#             "manufacture_unit_id_str": manufacture_unit_id,
+#             "level": 1
+#         }
+#         if industry_id_str:
+#             match["industry_id_str"] = industry_id_str
+
+#         pipeline = [
+#             {"$match": match},
+#             {
+#                 "$project": {
+#                     "_id": 0,
+#                     "id": {"$toString": "$_id"},
+#                     "name": 1,
+#                     "is_parent": {
+#                         "$cond": {
+#                             "if": {"$ne": ["$child_categories", []]},
+#                             "then": True,
+#                             "else": False
+#                         }
+#                     }
+#                 }
+#             }
+#         ]
+#         product_category_list = list(product_category.objects.aggregate(*pipeline))
+#     else:
+#         # Validate product_category_id
+#         try:
+#             category_oid = ObjectId(product_category_id)
+#         except Exception as e:
+#             # Handle invalid ObjectId
+#             return []
+
+#         # Build the match criteria for the starting category
+#         match_starting_category = {
+#             "id": category_oid,
+#             "manufacture_unit_id_str": manufacture_unit_id
+#         }
+#         if industry_id_str:
+#             match_starting_category["industry_id_str"] = industry_id_str
+
+#         try:
+#             # Fetch the starting category
+#             starting_category = product_category.objects.get(**match_starting_category)
+#         except DoesNotExist:
+#             # Starting category does not exist
+#             return []
+
+#         # Initialize the list to collect categories
+#         product_category_list = []
+
+#         # If the starting category is an end-level category, return it
+#         if starting_category.end_level:
+#             product_category_list.append({
+#                 "id": str(starting_category.id),
+#                 "name": starting_category.name,
+#                 "is_parent": False  # Since it's an end-level category
+#             })
+#         else:
+#             # Use $graphLookup to find all descendant end-level categories
+#             pipeline = [
+#                 {"$match": {"_id": category_oid}},
+#                 {
+#                     "$graphLookup": {
+#                         "from": "product_category",
+#                         "startWith": "$_id",
+#                         "connectFromField": "_id",
+#                         "connectToField": "parent_category_id",
+#                         "as": "descendants",
+#                         "maxDepth": 10,  # Adjust as needed
+#                         "depthField": "depth"
+#                     }
+#                 },
+#                 # Unwind the descendants to treat each descendant separately
+#                 {"$unwind": "$descendants"},
+#                 # Match only the end-level categories
+#                 {"$match": {"descendants.end_level": True}},
+#                 {
+#                     "$match": {
+#                         "descendants.manufacture_unit_id_str": manufacture_unit_id,
+#                         **({"descendants.industry_id_str": industry_id_str} if industry_id_str else {})
+#                     }
+#                 },
+#                 # Project the required fields
+#                 {
+#                     "$project": {
+#                         "_id": 0,
+#                         "id": {"$toString": "$descendants._id"},
+#                         "name": "$descendants.name",
+#                         "is_parent": {"$literal": False}  # Use $literal to assign False
+#                     }
+#                 }
+#             ]
+
+#             # Execute the aggregation pipeline
+#             descendants_list = list(product_category.objects.aggregate(*pipeline))
+#             product_category_list.extend(descendants_list)
+
+#     # Return the result as a JsonResponse
+#     return product_category_list
 
 
 def obtainProductCategoryList(request):
     # manufacture_unit_id = obtainManufactureIdFromToken(request)
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     product_category_id = request.GET.get('product_category_id')
+    industry_id_str = request.GET.get('industry_id')
     
     match = dict()
     match['manufacture_unit_id_str'] = manufacture_unit_id
+    if industry_id_str != None and industry_id_str != "":
+        match['industry_id_str'] = industry_id_str
     parent_category_obj = None
     if product_category_id == None:
         match['level'] = 1
@@ -124,26 +240,139 @@ def obtainProductCategoryListForDealer(request):
     product_category_list = list(product_category.objects.aggregate(*(pipeline)))
     return product_category_list
 
+# def obtainbrandList(request):
+#     manufacture_unit_id = request.GET.get('manufacture_unit_id')
+#     industry_id = request.GET.get('industry_id')
+#     product_category_id = request.GET.get('product_category_id')
+#     role_name = request.GET.get('role_name')
+#     is_parent = request.GET.get('is_parent')
+#     if is_parent != None and is_parent != "":
+#         is_parent = True
+
+#     # Build the match conditions for the brand collection
+#     match = {"manufacture_unit_id_str": manufacture_unit_id}
+#     if industry_id:
+#         match["industry_id_str"] = industry_id
+
+#     # Build the match conditions for the lookup pipeline
+#     lookup_match_conditions = []
+#     # Always match on brand_id using the variable from 'let'
+#     lookup_match_conditions.append({"$expr": {"$eq": ["$brand_id", "$$brand_id"]}})
+#     # If role_name is not provided, include 'visible': True
+#     if not role_name:
+#         lookup_match_conditions.append({"visible": True})
+#     # If product_category_id is provided, add a condition to match 'category_id'
+#     if product_category_id:
+#         try:
+#             category_oid = ObjectId(product_category_id)
+#             lookup_match_conditions.append({"$expr": {"$eq": ["$category_id", category_oid]}})
+#         except Exception as e:
+#             # Handle invalid ObjectId
+#             return []
+
+#     # Combine the match conditions into a single match object
+#     if lookup_match_conditions:
+#         match_obj = {"$match": {"$and": lookup_match_conditions}}
+#     else:
+#         match_obj = {"$match": {}}
+    
+#     pipeline = [
+#         {"$match": match},
+#         {
+#             "$lookup": {
+#                 "from": "product",
+#                 "let": {"brand_id": "$_id"},
+#                 "pipeline": [
+#                     match_obj,
+#                     {"$count": "total_count"},
+#                 ],
+#                 "as": "products_count",
+#             }
+#         },
+#         {
+#             "$addFields": {
+#                 "products_count": {
+#                     "$ifNull": [{"$arrayElemAt": ["$products_count.total_count", 0]}, 0],
+#                 }
+#             }
+#         },
+#         # Filter out brands with zero products when product_category_id is provided
+#         # This ensures only brands associated with the provided category are included
+#         {
+#             "$match": {
+#                 "$or": [
+#                     {"products_count": {"$gt": 0}},
+#                     {"$expr": {"$eq": [product_category_id, None]}}
+#                 ]
+#             }
+#         },
+#         {
+#             "$project": {
+#                 "_id": 0,
+#                 "id": {"$toString": "$_id"},
+#                 "name": 1,
+#                 "products_count": 1,
+#             }
+#         },
+#     ]
+
+#     brand_list = list(brand.objects.aggregate(*pipeline))
+#     return brand_list
+
 
 def obtainbrandList(request):
+    # Retrieve parameters from the request
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     industry_id = request.GET.get('industry_id')
+    product_category_id = request.GET.get('product_category_id')
     role_name = request.GET.get('role_name')
-    if role_name != None and role_name != "":
-        match_obj = {"$match": {"$expr": {"$eq": ["$brand_id", "$$brand_id"]}}}
+    is_parent = request.GET.get('is_parent')
+    if is_parent not in [None, "", False, "false", "False"]:
+        is_parent = True
     else:
-        match_obj = {
-        "$match": {
-            "$and": [
-            { "$expr": { "$eq": ["$brand_id", "$$brand_id"] } },
-            { "visible": True }
-            ]
-        }
-        }
+        is_parent = False
 
+    # Build the match conditions for the brand collection
     match = {"manufacture_unit_id_str": manufacture_unit_id}
     if industry_id:
         match["industry_id_str"] = industry_id
+
+    # Build the match conditions for the lookup pipeline
+    lookup_match_conditions = []
+    # Always match on brand_id using the variable from 'let'
+    lookup_match_conditions.append({"$expr": {"$eq": ["$brand_id", "$$brand_id"]}})
+    # If role_name is not provided, include 'visible': True
+    if not role_name:
+        lookup_match_conditions.append({"visible": True})
+
+    # Handle product_category_id
+    if product_category_id:
+        try:
+            category_oid = ObjectId(product_category_id)
+
+            # If is_parent is True, find all end-level category IDs under the given category
+            if is_parent:
+                end_level_category_ids = get_end_level_category_ids(category_oid)
+                if not end_level_category_ids:
+                    return []
+                # Add a condition to match products with category_id in end_level_category_ids
+                lookup_match_conditions.append({
+                    "$expr": {"$in": ["$category_id", end_level_category_ids]}
+                })
+            else:
+                # Add a condition to match products with the provided category_id
+                lookup_match_conditions.append({
+                    "$expr": {"$eq": ["$category_id", category_oid]}
+                })
+        except Exception as e:
+            # Handle invalid ObjectId
+            return []
+
+    # Combine the match conditions into a single match object
+    if lookup_match_conditions:
+        match_obj = {"$match": {"$and": lookup_match_conditions}}
+    else:
+        match_obj = {"$match": {}}
 
     pipeline = [
         {"$match": match},
@@ -161,8 +390,18 @@ def obtainbrandList(request):
         {
             "$addFields": {
                 "products_count": {
-                    "$arrayElemAt": ["$products_count.total_count", 0],
+                    "$ifNull": [{"$arrayElemAt": ["$products_count.total_count", 0]}, 0],
                 }
+            }
+        },
+        # Filter out brands with zero products when product_category_id is provided
+        # This ensures only brands associated with the provided category are included
+        {
+            "$match": {
+                "$or": [
+                    {"products_count": {"$gt": 0}},
+                    {"$expr": {"$eq": [product_category_id, None]}}
+                ]
             }
         },
         {
@@ -170,13 +409,62 @@ def obtainbrandList(request):
                 "_id": 0,
                 "id": {"$toString": "$_id"},
                 "name": 1,
-                "products_count": {"$ifNull": ["$products_count", 0]},
+                "products_count": 1,
             }
         },
     ]
 
     brand_list = list(brand.objects.aggregate(*pipeline))
     return brand_list
+
+def get_end_level_category_ids(category_oid):
+    # Import necessary exceptions
+    from mongoengine import DoesNotExist
+
+    try:
+        # Fetch the starting category
+        starting_category = product_category.objects.get(id=category_oid)
+    except DoesNotExist:
+        # Starting category does not exist
+        return []
+
+    # If the starting category is an end-level category, return its ID
+    if starting_category.end_level:
+        return [category_oid]
+    else:
+        # Use $graphLookup to find all descendant end-level categories
+        pipeline = [
+            {"$match": {"_id": category_oid}},
+            {
+                "$graphLookup": {
+                    "from": "product_category",
+                    "startWith": "$_id",
+                    "connectFromField": "_id",
+                    "connectToField": "parent_category_id",
+                    "as": "descendants",
+                    "maxDepth": 10,  # Adjust as needed
+                    "depthField": "depth"
+                }
+            },
+            # Unwind the descendants to treat each descendant separately
+            {"$unwind": "$descendants"},
+            # Match only the end-level categories
+            {"$match": {"descendants.end_level": True}},
+            # Group to collect all end-level category IDs
+            {
+                "$group": {
+                    "_id": None,
+                    "end_level_category_ids": {"$addToSet": "$descendants._id"}
+                }
+            }
+        ]
+
+        # Execute the aggregation pipeline
+        result = list(product_category.objects.aggregate(*pipeline))
+        if result:
+            return result[0]['end_level_category_ids']
+        else:
+            return []
 
 
 @csrf_exempt
@@ -188,9 +476,13 @@ def obtainProductsList(request):
     product_category_id = json_request.get('product_category_id')
     filters = json_request.get('filters')
     is_parent = json_request.get('is_parent')
-    brand_id = json_request.get('brand_id')
     price_from = json_request.get('price_from')
     price_to = json_request.get('price_to')
+    industry_id_str = json_request.get('industry_id')
+    brand_id_list = json_request.get('brand_id_list')
+    if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+        brand_id_list = [ObjectId(ins) for ins in brand_id_list]
+    
     product_list = []
 
     match = {}
@@ -200,6 +492,9 @@ def obtainProductsList(request):
         match['category_id'] = ObjectId(product_category_id)
     if filters != None and filters != "all" and filters != "":
         match['availability'] = True if filters == "In-stock" else False
+
+    if industry_id_str != None and industry_id_str != "":
+        match['industry_id_str'] = industry_id_str
 
     if (is_parent != None and is_parent == '') or is_parent == False:
         pipeline =[
@@ -235,8 +530,8 @@ def obtainProductsList(request):
             }
             }]
         price_match = dict()
-        if brand_id != None and brand_id != "":
-            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+            price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
             price_match['list_price'] = {
                 "$gte": int(price_from),
@@ -342,8 +637,8 @@ def obtainProductsList(request):
             }
         }]
         price_match = dict()
-        if brand_id != None and brand_id != "":
-            price_match['brand_ins._id'] = ObjectId(brand_id)
+        if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+            price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
             price_match['product_ins.list_price'] = {
                 "$gte": int(price_from),
@@ -384,6 +679,8 @@ def obtainProductsList(request):
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
+
+
 @csrf_exempt
 def obtainProductsListForDealer(request):
     json_request = JSONParser().parse(request)

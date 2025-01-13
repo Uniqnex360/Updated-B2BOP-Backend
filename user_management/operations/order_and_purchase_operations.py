@@ -16,6 +16,8 @@ import threading
 from user_management.operations.user_operations import getAddressFormat
 import pytz
 from tzlocal import get_localzone
+import requests
+from django.conf import settings
 
 
 
@@ -1690,8 +1692,7 @@ def createReorder(request):
 
 
 
-import requests
-from django.conf import settings
+
 
 # settings.py
 SHIPENGINE_API_KEY = "TEST_NEwEXewJdqQ91auh8NyGHI6KpP9zolbLJUNi4JFsNJ0"
