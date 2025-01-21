@@ -6,7 +6,7 @@ from user_management.operations.order_and_purchase_operations import createOrUpd
 from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry, forgotPassword, changePassword
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product
 
 
 urlpatterns = [
@@ -73,6 +73,7 @@ urlpatterns = [
     path('updateBulkProduct/',updateBulkProduct,name="updateBulkProduct"),
     path('productCountForDealer/',productCountForDealer,name="productCountForDealer"), 
     path('obtainProductCategoryListForDealer/',obtainProductCategoryListForDealer,name="obtainProductCategoryListForDealer"),
+    path('get_highest_priced_product/',get_highest_priced_product,name="get_highest_priced_product"),
 
     #Upload File
     path('upload_file/',upload_file,name="upload_file"),

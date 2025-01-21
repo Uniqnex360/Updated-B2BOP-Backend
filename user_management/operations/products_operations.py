@@ -532,9 +532,11 @@ def obtainProductsList(request):
         if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
             price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            if price_to > 0:
+                price_to = int(price_to) + 1
             price_match['list_price'] = {
                 "$gte": int(price_from),
-                "$lte": int(price_to)
+                "$lte": price_to
             }
         if price_match != {}:
             brand_match = {
@@ -639,9 +641,11 @@ def obtainProductsList(request):
         if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
             price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            if price_to > 0:
+                price_to = int(price_to) + 1
             price_match['product_ins.list_price'] = {
                 "$gte": int(price_from),
-                "$lte": int(price_to)
+                "$lte": price_to
             }
         if price_match != {}:
             brand_match = {
@@ -757,9 +761,11 @@ def obtainProductsListForDealer(request):
         if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
             price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            if price_to > 0:
+                price_to = int(price_to) + 1
             price_match['list_price'] = {
                 "$gte": int(price_from),
-                "$lte": int(price_to)
+                "$lte": price_to
             }
         if price_match != {}:
             brand_match = {
@@ -906,9 +912,12 @@ def obtainProductsListForDealer(request):
         if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
             price_match['brand_ins._id'] = {"$in": brand_id_list}
         if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            if price_to > 0:
+                price_to = int(price_to) + 1
+
             price_match['product_ins.list_price'] = {
                 "$gte": int(price_from),
-                "$lte": int(price_to)
+                "$lte": price_to
             }
         if price_match != {}:
             brand_match = {
@@ -976,6 +985,9 @@ def productCountForDealer(request):
     filters = json_request.get('filters')
     industry_id_str = json_request.get('industry_id')
     brand_id_list = json_request.get('brand_id_list')
+    price_from = json_request.get('price_from')
+    price_to = json_request.get('price_to')
+    
     
 
     match = {"manufacture_unit_id" : ObjectId(manufacture_unit_id),"visible" : True}
@@ -989,23 +1001,31 @@ def productCountForDealer(request):
     if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
         brand_id_list = [ObjectId(ins) for ins in brand_id_list]
         match['brand_id'] = {"$in": brand_id_list}
-    
-    
-    if product_category_id == "":
 
-        count_pipeline = [
-            {
-                "$match": match
-            },
-            {
-                "$count": "total_count"
+    if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
+            if price_to > 0:
+                price_to = int(price_to) + 1
+            match['list_price'] = {
+                "$gte": int(price_from),
+                "$lte": price_to
             }
-        ]
+    
+    
+    # if product_category_id == "":
 
-        # Execute the count pipeline to get the total count
-        total_count_result = list(product.objects.aggregate(*(count_pipeline)))
-        total_count = total_count_result[0]['total_count'] if total_count_result else 0
-    elif product_category_id != None and product_category_id != "":
+    count_pipeline = [
+        {
+            "$match": match
+        },
+        {
+            "$count": "total_count"
+        }
+    ]
+
+    # Execute the count pipeline to get the total count
+    total_count_result = list(product.objects.aggregate(*(count_pipeline)))
+    total_count = total_count_result[0]['total_count'] if total_count_result else 0
+    # elif product_category_id != None and product_category_id != "":
         # match = {}
         # match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
         # match['product_ins.visible'] = True
@@ -1057,17 +1077,17 @@ def productCountForDealer(request):
         #     }
         # ]
         # total_count_result = list(product_category.objects.aggregate(*(pipeline)))
-        pipeline = [
-            {
-                "$match": match
-            },
+        # pipeline = [
+        #     {
+        #         "$match": match
+        #     },
             
-            {
-                "$count": "total_products"
-            }
-        ]
-        total_count_result = list(product.objects.aggregate(*(pipeline)))
-        total_count = total_count_result[0]['total_products'] if total_count_result else 0
+        #     {
+        #         "$count": "total_products"
+        #     }
+        # ]
+        # total_count_result = list(product.objects.aggregate(*(pipeline)))
+        # total_count = total_count_result[0]['total_products'] if total_count_result else 0
 
     return total_count
 
@@ -1711,8 +1731,11 @@ def productSearch(request):
     limit = json_request.get("limit")
     product_category_id = request.GET.get('product_category_id')
     search_query = search_query.strip()
-    spell = SpellChecker()
-    search_query = ' '.join([spell.correction(word) for word in search_query.split()])
+    try:
+        spell = SpellChecker()
+        search_query = ' '.join([spell.correction(word) for word in search_query.split()])
+    except:
+        pass
     match = dict()
     match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
     if role_name != None:
@@ -2283,3 +2306,45 @@ def get_related_products(request):
     related_products = list(product.objects.aggregate(*pipeline))    
     # You can format the response as needed, for example, using Django's JsonResponse
     return related_products
+
+
+def get_highest_priced_product(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    role_name = request.GET.get('role_name')
+    if role_name in ["dealer_admin","dealer_user"]:
+        match = {
+            "$match": {
+                "manufacture_unit_id": ObjectId(manufacture_unit_id),
+                "visible": True,
+                "availability": True
+            }
+        }
+    else:
+        match = {
+            "$match": {
+                "manufacture_unit_id": ObjectId(manufacture_unit_id)
+            }
+        }
+
+        
+    pipeline = [
+        match,
+        {
+            "$sort": {
+                "list_price": -1
+            }
+        },
+        {
+            "$limit": 1
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "price": {"$round": ["$list_price", 2]},
+                "currency": 1,
+            }
+        }
+    ]
+
+    highest_priced_product = list(product.objects.aggregate(pipeline))
+    return highest_priced_product[0] if highest_priced_product else {}

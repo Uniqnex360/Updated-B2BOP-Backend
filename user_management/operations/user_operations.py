@@ -783,7 +783,6 @@ def createOrUpdateBank(bank_obj):
 def updateUserProfile(request):
     data = dict()
     json_request = JSONParser().parse(request)
-    print('updateUserProfile',json_request,"\n\n\n")
     user_id =  json_request.get('user_id')
     user_obj = json_request['user_obj']
     # del user_obj['age']

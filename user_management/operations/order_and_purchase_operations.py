@@ -288,7 +288,8 @@ def obtainOrderList(request):
                         ]
                 },
                 "total_items" : 1,
-                "amount" : {"$concat": [{"$toString": "$amount"},"$currency"]},
+                "amount" : 1,
+                "currency" : 1,
                 "shipping_service" : "-",
                 "tracking_code" : "-",
                 "creation_date": {
@@ -322,30 +323,13 @@ def obtainOrderList(request):
         pipeline.append(search_obj)
 
     if sort_by != "":
-        if sort_by == "amount":
-            amount_sort = [{
-                        "$addFields": {
-                            "numeric_amount": {
-                                "$toDouble": {
-                                    "$arrayElemAt": [{"$split": ["$amount", "USD"]}, 0]
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "$sort": {
-                            "numeric_amount" : sort_by_value
-                        }
-                    }
-                    ]
-            pipeline.extend(amount_sort)
-        else:
-            pipeline2 = {
-                "$sort": {
-                    sort_by: sort_by_value
-                }
+        
+        pipeline2 = {
+            "$sort": {
+                sort_by: sort_by_value
             }
-            pipeline.append(pipeline2)
+        }
+        pipeline.append(pipeline2)
     else:
         pipeline2 = {
                 "$sort": {
@@ -726,7 +710,6 @@ def obtainUserDetails(request):
 @csrf_exempt
 def obtainOrderListForDealer(request):
     json_request = JSONParser().parse(request)
-
     user_id = json_request.get('user_id')
     sort_by = json_request.get('sort_by')
     sort_by_value = json_request.get('sort_by_value')
@@ -735,8 +718,8 @@ def obtainOrderListForDealer(request):
     fulfilled_status = json_request['fulfilled_status']
     payment_status = json_request['payment_status']
     is_reorder = json_request.get('is_reorder')
+    search_by_date = json_request.get('search_by_date')
 
-    print("is_reorder",is_reorder)
 
     status_match = {}
     status_match['customer_id'] = ObjectId(user_id)
@@ -752,6 +735,24 @@ def obtainOrderListForDealer(request):
             status_match['is_reorder'] = True
         elif is_reorder == "no":
             status_match['is_reorder'] = False
+    if search_by_date != None and search_by_date != "":
+        search_date = datetime.strptime(search_by_date, "%Y-%m-%d")
+        # print("search_date",search_date,type(search_date),"\n\n")
+
+        # Get the system's local timezone dynamically
+        local_timezone = datetime.now().astimezone().tzinfo
+
+        # Localize start and end of the day to the local timezone
+        start_of_day = search_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+        end_of_day = search_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+
+        # Convert to UTC for MongoDB query
+        start_of_day_utc = start_of_day.astimezone(pytz.utc)
+        end_of_day_utc = end_of_day.astimezone(pytz.utc)
+        status_match["creation_date"] =  {
+                                "$gte": start_of_day_utc,
+                                "$lte": end_of_day_utc 
+                                 }
 
     pipeline = [
     {"$match": status_match},  
@@ -1754,7 +1755,6 @@ def get_shipping_rates(ship_from, ship_to, packages, carrier_ids):
 
 
 def create_shipping_label(ship_from, ship_to, package):
-    print(package)
     url = f"{SHIPENGINE_BASE_URL}/labels"
     headers = {
 

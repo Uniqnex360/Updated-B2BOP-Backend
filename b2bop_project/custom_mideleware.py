@@ -8,6 +8,8 @@ from django.http import HttpResponse,JsonResponse
 import json
 import pytz
 import datetime
+from django.conf import settings
+
 
 
 
@@ -15,7 +17,7 @@ import datetime
 SIMPLE_JWT = {
   'ACCESS_TOKEN_LIFETIME': timedelta(minutes=500),
   'ALGORITHM': 'HS256',
-  'SIGNING_KEY': 'django-insecure-3)*o)j&1$08q65k4vsn2-&%ymv!dfe4*#1d)1d4pnudal$)gw*',
+  'SIGNING_KEY': settings.SECRET_KEY,
   'SESSION_COOKIE_DOMAIN' : '192.168.30.148',
   'SESSION_COOKIE_MAX_AGE' : 12000000,
   'AUTH_COOKIE': 'access_token',  # Cookie name. Enables cookies if value is set.

@@ -194,6 +194,7 @@ class product(Document):
     rating_average = fields.FloatField(default=0.0)
     from_the_manufacture = fields.StringField()
     industry_id_str = fields.StringField()
+    tax = fields.FloatField(default=0.0)
 
 
 class unit_wise_field_mapping(Document):
@@ -239,6 +240,7 @@ class order(Document):
     is_reorder = fields.BooleanField(default=False)
     industry_id_str = fields.StringField()
     shipping_from = fields.ReferenceField(address)
+    shipping_fee = fields.FloatField(default=0.0)
 
 
 
