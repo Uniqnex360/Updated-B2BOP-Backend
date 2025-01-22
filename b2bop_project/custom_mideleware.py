@@ -97,7 +97,7 @@ def createJsonResponse(request, token = None):
     response.renderer_context = {}
     response.data['message'] = 'success'
     response.data['status'] = True
-    response.data['_c1'] = c1
+    response.data['token'] = c1
     response.status_code = 200
     return response
 

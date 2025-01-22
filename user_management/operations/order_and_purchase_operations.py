@@ -2036,3 +2036,65 @@ def getAvaliableCarrierList(request):
     return data
 
 
+
+
+def notifyUserForAvailableProducts(request):
+    # Fetch order details
+    json_request = JSONParser().parse(request)
+
+    order_id = json_request.get('order_id')
+    product_ids = json_request.get('product_ids')
+
+    order_obj = DatabaseModel.get_document(order.objects, {"id": order_id}, ["customer_id", "order_items", "order_id"])
+    user_obj = DatabaseModel.get_document(user.objects, {"id": order_obj.customer_id}, ["first_name", "last_name", "email"])
+
+    # Fetch product details
+    pipeline = [
+        {
+            "$match": {
+                "_id": {"$in": [ObjectId(pid) for pid in product_ids]}
+            }
+        },
+        {
+            "$lookup": {
+                "from": "product",
+                "localField": "product_id",
+                "foreignField": "_id",
+                "as": "product_ins"
+            }
+        },
+        {"$unwind": "$product_ins"},
+        {
+            "$project": {
+                "_id": 0,
+                "product_name": "$product_ins.product_name",
+                "availability": "$product_ins.availability"
+            }
+        }
+    ]
+    product_list = list(user_cart_item.objects.aggregate(pipeline))
+
+    # Filter available products
+    available_products = [product for product in product_list if product['availability']]
+
+    # Prepare email content
+    product_names = ", ".join([product['product_name'] for product in available_products])
+    subject = f"Order {order_obj.order_id} - Product Availability Notification"
+    body = f"""
+    Dear {user_obj.first_name} {user_obj.last_name},
+
+    We are pleased to inform you that the following products from your order {order_obj.order_id} are now available and will be transported shortly:
+
+    {product_names}
+
+    Thank you for shopping with us!
+
+    Best regards,
+    B2Bop Team
+    """
+
+    # Send email
+    send_email(user_obj.email, subject, body)
+
+    return {"status": "Email sent successfully"}
+

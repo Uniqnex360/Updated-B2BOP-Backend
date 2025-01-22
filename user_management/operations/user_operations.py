@@ -81,25 +81,23 @@ def forgotPassword(request):
         user_obj = DatabaseModel.get_document(user.objects,{"email" : email},['id','first_name','last_name'])
         if user_obj != None:
             DatabaseModel.update_documents(user.objects,{'id' : user_obj.id},{"otp" : otp, 'otp_generated_time' : datetime.now()})
-            name = f"{user_obj.first_name} {user_obj.last_name}"
-
+            name = f"{user_obj.first_name} {user_obj.last_name or ''}".strip()
+            #Your password Reset link is: https://b2bop.netlify.app/reset-password
             subject = "Reset Your Password - B2B-OP"
             body = f"""Dear {name},
 
                         We received a request to reset your password for your account at B2B-OP.
 
-                        To reset your password, please click the link below:
+                        Your OTP for password reset is: {otp}
 
-                        [Password Reset URL]
+                        If you did not request this change or believe this was a mistake, please ignore this email. Your password will not be changed unless you use the OTP above.
 
-                        If you did not request this change or believe this was a mistake, please ignore this email. Your password will not be changed unless you click the link above.
+                        For your security, the OTP will expire in 15 minutes.
 
-                        For your security, the link will expire in 15 minutes.
+                        If you need further assistance, feel free to contact our support team.
 
-                        If you need further assistance, feel free to contact our support team
-
-                        Best regards,  
-                        B2B-OP  
+                        Best regards,
+                        B2B-OP
                         https://b2bop.netlify.app/
                         """
             send_email(json_req['email'].lower(), subject, body)
@@ -121,7 +119,7 @@ def changePassword(request):
         user_id = json_req['user_id']
         otp = json_req['otp']
         password = json_req['password']
-        user_obj = DatabaseModel.get_document(user.objects,{"user_id" : user_id},['otp','otp_generated_time'])
+        user_obj = DatabaseModel.get_document(user.objects,{"id" : user_id},['otp','otp_generated_time'])
         if user_obj != None:
             current_time = datetime.now()
 
