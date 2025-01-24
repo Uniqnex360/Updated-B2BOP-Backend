@@ -218,7 +218,8 @@ class user_cart_item(Document):
     creation_date = fields.DateTimeField(default=datetime.now())
     updated_date = fields.DateTimeField(default=datetime.now())
     status = fields.StringField(choices=["Pending", "Completed"], default="Pending")
-    unit_price = fields.FloatField(required=True)  
+    unit_price = fields.FloatField(required=True) 
+    product_status = fields.StringField(choices=["Shipped", "Pending"], default="Pending")
 
 
 

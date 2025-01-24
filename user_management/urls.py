@@ -1,5 +1,5 @@
 from django.urls import path
-from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, acceptOrRejectOrder, createWishList,deleteWishlist, obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, notifyUserForAvailableProducts
+from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, acceptOrRejectOrder, createWishList,deleteWishlist, obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, notifyBuyerForAvailableProductsInOrder
 
 
 
@@ -44,7 +44,7 @@ urlpatterns = [
     path('conformPayment/',conformPayment,name="conformPayment"),
     path('getorderDetails/',getorderDetails,name="getorderDetails"),
     path('acceptOrRejectOrder/',acceptOrRejectOrder,name="acceptOrRejectOrder"),
-    path('notifyUserForAvailableProducts/',notifyUserForAvailableProducts,name="notifyUserForAvailableProducts"),
+    path('notifyBuyerForAvailableProductsInOrder/',notifyBuyerForAvailableProductsInOrder,name="notifyBuyerForAvailableProductsInOrder"),
 
     #Reorder  
     path('createReorder/',createReorder,name="createReorder"),

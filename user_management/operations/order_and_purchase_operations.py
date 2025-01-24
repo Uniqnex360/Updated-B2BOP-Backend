@@ -1108,6 +1108,8 @@ def getorderDetails(request):
         {
         "$project" :{
                 "_id": 0,
+                "id" : {"$toString" : "$_id"},
+                "product_id" : {"$toString" : "$product_id"},
                 "product_name" : "$products_ins.product_name",
                 "primary_image" : {"$first":"$products_ins.images"},
                 "sku_number" : "$products_ins.sku_number_product_code_item_number",
@@ -1116,7 +1118,8 @@ def getorderDetails(request):
                 "price" : {"$ifNull" : ["$unit_price",0.0]},
                 "currency" : "$products_ins.currency",
                 "quantity" : 1,
-                "total_price" : "$price"
+                "total_price" : "$price",
+                "product_status" : 1
         }
         }
     ]
@@ -2037,53 +2040,56 @@ def getAvaliableCarrierList(request):
 
 
 
-
-def notifyUserForAvailableProducts(request):
+@csrf_exempt
+def notifyBuyerForAvailableProductsInOrder(request):
     # Fetch order details
     json_request = JSONParser().parse(request)
 
     order_id = json_request.get('order_id')
-    product_ids = json_request.get('product_ids')
+    user_cart_item_ids = json_request.get('user_cart_item_ids')
+
+    user_cart_item_ids = [ObjectId(pid) for pid in user_cart_item_ids]
 
     order_obj = DatabaseModel.get_document(order.objects, {"id": order_id}, ["customer_id", "order_items", "order_id"])
-    user_obj = DatabaseModel.get_document(user.objects, {"id": order_obj.customer_id}, ["first_name", "last_name", "email"])
+    user_obj = DatabaseModel.get_document(user.objects, {"id": order_obj.customer_id.id}, ["first_name", "last_name", "email"])
+    user_name = f"{user_obj.first_name} {user_obj.last_name or ''}".strip()
 
     # Fetch product details
     pipeline = [
         {
             "$match": {
-                "_id": {"$in": [ObjectId(pid) for pid in product_ids]}
+                "_id": {"$in": user_cart_item_ids}
             }
         },
         {
-            "$lookup": {
-                "from": "product",
-                "localField": "product_id",
-                "foreignField": "_id",
-                "as": "product_ins"
-            }
+        "$lookup": {
+            "from": "product",  
+            "localField": "product_id",  
+            "foreignField": "_id",  
+            "as": "product_ins"  
+        }
         },
-        {"$unwind": "$product_ins"},
+        {
+            "$unwind": {
+                "path": "$product_ins"            }
+        },
         {
             "$project": {
                 "_id": 0,
                 "product_name": "$product_ins.product_name",
-                "availability": "$product_ins.availability"
             }
         }
     ]
     product_list = list(user_cart_item.objects.aggregate(pipeline))
-
-    # Filter available products
-    available_products = [product for product in product_list if product['availability']]
+   
 
     # Prepare email content
-    product_names = ", ".join([product['product_name'] for product in available_products])
-    subject = f"Order {order_obj.order_id} - Product Availability Notification"
+    product_names = "\n".join([f"{i+1}. {product_ins['product_name']}" for i, product_ins in enumerate(product_list)])
+    subject = f"Order #{order_obj.order_id} - Product Fulfillment Notification"
     body = f"""
-    Dear {user_obj.first_name} {user_obj.last_name},
+    Dear {user_name},
 
-    We are pleased to inform you that the following products from your order {order_obj.order_id} are now available and will be transported shortly:
+    We are pleased to inform you that the following products from your order #{order_obj.order_id} are now available and will be transported shortly:
 
     {product_names}
 
@@ -2096,5 +2102,42 @@ def notifyUserForAvailableProducts(request):
     # Send email
     send_email(user_obj.email, subject, body)
 
+    DatabaseModel.update_documents(user_cart_item.objects,{"id__in" : user_cart_item_ids},{"product_status" : "Shipped"})
+    updateOrderFulfillmentStatus(order_id)
+
     return {"status": "Email sent successfully"}
 
+
+
+# DatabaseModel.update_documents(user_cart_item.objects,{},{"product_status" : "Pending"})
+def updateOrderFulfillmentStatus(order_id):
+    # Fetch the order details
+    order_obj = DatabaseModel.get_document(order.objects, {"id": order_id}, ["order_items"])
+
+    # Check the status of each product in the order
+    pipeline = [
+        {
+            "$match": {
+                "_id": {"$in": [ins.id for ins in order_obj.order_items]}
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "product_status": 1
+            }
+        }
+    ]
+    user_cart_item_list = list(user_cart_item.objects.aggregate(pipeline))
+
+    # Determine the fulfillment status
+    all_shipped = all(item['product_status'] == "Shipped" for item in user_cart_item_list)
+    if all_shipped:
+        fulfillment_status = "Fulfilled"
+    else:
+        fulfillment_status = "Partially Fulfilled"
+
+    # Update the order's fulfillment status
+    DatabaseModel.update_documents(order.objects, {"id": order_id}, {"fulfilled_status": fulfillment_status, "updated_date": datetime.now()})
+
+    return {"status": "Order fulfillment status updated successfully"}
