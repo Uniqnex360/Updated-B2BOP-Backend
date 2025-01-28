@@ -176,7 +176,9 @@ def obtainOrderList(request):
     manufacture_unit_id = json_request['manufacture_unit_id']
     search_query = json_request['search_query']
     sort_by = json_request['sort_by']
-    search_by_date = json_request.get('search_by_date')
+    start_date_str = json_request.get('start_date')
+    end_date_str = json_request.get('end_date')
+    
     
     sort_by_value = json_request['sort_by_value']
     # status = json_request['status']
@@ -231,16 +233,19 @@ def obtainOrderList(request):
         }
         pipeline.append(dealer_search_obj)
 
-    if search_by_date != None and search_by_date != "":
-        search_date = datetime.strptime(search_by_date, "%Y-%m-%d")
-        # print("search_date",search_date,type(search_date),"\n\n")
+    if start_date_str != None and start_date_str != "":
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
 
         # Get the system's local timezone dynamically
         local_timezone = datetime.now().astimezone().tzinfo
 
         # Localize start and end of the day to the local timezone
-        start_of_day = search_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
-        end_of_day = search_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+        start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+        if end_date_str != None and end_date_str != "":
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+        else:
+            end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
 
         # Convert to UTC for MongoDB query
         start_of_day_utc = start_of_day.astimezone(pytz.utc)
@@ -718,8 +723,8 @@ def obtainOrderListForDealer(request):
     fulfilled_status = json_request['fulfilled_status']
     payment_status = json_request['payment_status']
     is_reorder = json_request.get('is_reorder')
-    search_by_date = json_request.get('search_by_date')
-
+    start_date_str = json_request.get('start_date')
+    end_date_str = json_request.get('end_date')
 
     status_match = {}
     status_match['customer_id'] = ObjectId(user_id)
@@ -735,16 +740,19 @@ def obtainOrderListForDealer(request):
             status_match['is_reorder'] = True
         elif is_reorder == "no":
             status_match['is_reorder'] = False
-    if search_by_date != None and search_by_date != "":
-        search_date = datetime.strptime(search_by_date, "%Y-%m-%d")
-        # print("search_date",search_date,type(search_date),"\n\n")
+    if start_date_str != None and start_date_str != "":
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
 
         # Get the system's local timezone dynamically
         local_timezone = datetime.now().astimezone().tzinfo
 
         # Localize start and end of the day to the local timezone
-        start_of_day = search_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
-        end_of_day = search_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+        start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+        if end_date_str != None and end_date_str != "":
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+        else:
+            end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
 
         # Convert to UTC for MongoDB query
         start_of_day_utc = start_of_day.astimezone(pytz.utc)
@@ -1144,6 +1152,11 @@ def getorderDetails(request):
                 "message" : {"$ifNull" : ["$message",""]},
                 "transaction_id" : 1
         }
+        },
+        {
+            "$sort" : {
+                "id" : -1
+            }
         }
         ]
         transaction_list = list(transaction.objects.aggregate(*(pipeline)))

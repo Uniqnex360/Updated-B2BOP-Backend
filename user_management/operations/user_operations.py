@@ -1047,6 +1047,11 @@ def obtainDashboardDetailsForManufactureAdmin(request):
     },
     {"$unwind" : "$products_ins"},
     {
+        "$match": {
+            "products_ins.visible": True
+                 }
+    },
+    {
         "$lookup" :{
             "from" : "brand",
             "localField" : "products_ins.brand_id",
@@ -1302,6 +1307,11 @@ def obtainDashboardDetailsForDealer(request):
         }
     },
     {"$unwind" : "$brand_ins"},
+    {
+        "$match": {
+            "products_ins.visible": True
+                 }
+    },
     {"$project" : {
                 "_id" : 0,
                 "id" : {"$toString" : "$_id"},

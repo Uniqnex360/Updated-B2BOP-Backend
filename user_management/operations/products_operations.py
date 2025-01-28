@@ -417,18 +417,22 @@ def obtainbrandList(request):
     return brand_list
 
 def get_end_level_category_ids(category_oid):
-    # Import necessary exceptions
-    from mongoengine import DoesNotExist
+    pipeline = [
+            {"$match": {"_id": category_oid}},
+            {
+                "$project": {
+                    "_id": 0,
+                    "end_level": 1
+                }
+            }
+        ]
 
-    try:
-        # Fetch the starting category
-        starting_category = product_category.objects.get(id=category_oid)
-    except DoesNotExist:
-        # Starting category does not exist
+        # Execute the aggregation pipeline
+    product_category_obj = list(product_category.objects.aggregate(*pipeline))
+    if product_category_obj == []:
         return []
 
-    # If the starting category is an end-level category, return its ID
-    if starting_category.end_level:
+    if product_category_obj[0]['end_level'] == True:
         return [category_oid]
     else:
         # Use $graphLookup to find all descendant end-level categories
@@ -558,7 +562,8 @@ def obtainProductsList(request):
                 "end_level_category" : 1,
                 "price" : {"$round":["$list_price",2]},
                 "currency" : 1,
-                "availability" : 1
+                "availability" : 1,
+                "quantity" : 1
             }
             }
         pipeline.append(project_stage)
@@ -667,7 +672,8 @@ def obtainProductsList(request):
                 "end_level_category": 1,
                 "price": {"$round":["$product_ins.list_price",2]},
                 "currency": "$product_ins.currency",
-                "availability": "$product_ins.availability"
+                "availability": "$product_ins.availability",
+                "quantity" : "$product_ins.quantity"
             }
         }
         pipeline.append(project_stage)
