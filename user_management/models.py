@@ -48,6 +48,7 @@ class manufacture_unit(Document):
     location = fields.StringField()
     logo = fields.StringField()
     industry = fields.StringField()
+    is_active = fields.BooleanField(default=True)
 
 class user(Document):
     dealer_id = fields.IntField(default=None)

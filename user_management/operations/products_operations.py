@@ -9,7 +9,11 @@ from b2bop_project.crud import DatabaseModel
 import ast
 from spellchecker import SpellChecker
 from mongoengine import DoesNotExist
-
+from django.core.files.storage import FileSystemStorage
+from django.conf import settings
+import json
+import math
+import os
 
 
 def obtainProductCategoryList(request):
@@ -227,6 +231,27 @@ def obtainProductCategoryListForDealer(request):
     pipeline =[
         {
             "$match" : match
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "id":{"$toString" : "$_id"},
+            "name" : 1
+           }
+        }
+    ]
+    product_category_list = list(product_category.objects.aggregate(*(pipeline)))
+    return product_category_list
+
+
+def obtainEndlevelcategoryList(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline =[
+        {
+            "$match" : {
+                "manufacture_unit_id_str" : manufacture_unit_id,
+                "end_level" : True
+            }
         },
         {
            "$project" :{
@@ -2171,85 +2196,6 @@ def productCompare(request):
 
 
 
-# def get_related_products(request):
-#     # Get the product_id and manufacture_unit_id from the request
-#     product_id = request.GET.get('product_id')
-#     manufacture_unit_id = request.GET.get('manufacture_unit_id')
-#     product_object_id = ObjectId(product_id)
-
-#     # Fetch the current product's details from the database
-#     current_product = DatabaseModel.get_document(
-#         product.objects,
-#         {"id": product_object_id},  # Using '_id' for MongoDB queries
-#         ['brand_id', 'category_id', 'attributes']
-#     )
-
-#     # Extract plain values for use in the pipeline
-#     current_brand_id = str(current_product.brand_id.id) if current_product.brand_id else None
-#     current_category_id = str(current_product.category_id.id) if current_product.category_id else None
-#     # If you plan to use attributes, ensure it's extracted like below
-#     # current_attributes = current_product.attributes or []
-
-#     # MongoDB aggregation pipeline
-#     pipeline = [
-#     {
-#         "$match": {
-#             "_id": {"$ne": product_object_id},  # Exclude the current product
-#             "visible": True,
-#             "availability": True,
-#             "manufacture_unit_id": ObjectId(manufacture_unit_id)
-#         }
-#     },
-#     {
-#         "$addFields": {
-#             "relevance": {
-#                 "$sum": [
-#                     {"$cond": [{"$eq": ["$brand_id", current_brand_id]}, 3, 0]},
-#                     {"$cond": [{"$eq": ["$category_id", current_category_id]}, 2, 0]},
-#                     # Uncomment and adjust if you want to include attribute matching
-#                     # {"$cond": [{"$gt": [{"$size": {"$setIntersection": ["$attributes", current_attributes]}}, 0]}, 1, 0]}
-#                 ]
-#             }
-#         }
-#     },
-#     {
-#         "$sort": {
-#             "relevance": -1,  # Sort by relevance score
-#             "rating_average": -1  # If relevance is the same, sort by rating
-#         }
-#     },
-#     {"$limit": 10},
-#     {
-#         "$project": {
-#             "_id": 0,
-#             "id": {"$toString": "$_id"},
-#             "name": "$product_name",
-#             "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
-#             "sku_number": "$sku_number_product_code_item_number",
-#             "mpn": 1,
-#             "msrp": {"$round": ["$msrp", 2]},
-#             "was_price": {"$round": ["$was_price", 2]},
-#             "brand_name": 1,
-#             "visible": 1,
-#             "end_level_category": "$product_category_ins.name",
-#             "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
-#             "price": {"$round": ["$list_price", 2]},
-#             "currency": 1,
-#             "availability": 1,
-#             "discount": 1,
-#             "quantity": 1,
-#             "upc_ean": 1,
-#         }
-#     }
-#     ]
-
-#     # Execute the pipeline and return the result
-#     related_products = list(product.objects.aggregate(*pipeline))
-    
-#     # You can format the response as needed, for example, using Django's JsonResponse
-#     return related_products
-
-
 def get_related_products(request):
     # Get the product_id and manufacture_unit_id from the request
     product_id = request.GET.get('product_id')
@@ -2354,3 +2300,522 @@ def get_highest_priced_product(request):
 
     highest_priced_product = list(product.objects.aggregate(pipeline))
     return highest_priced_product[0] if highest_priced_product else {}
+
+
+
+@csrf_exempt
+def upload_file_new(request):
+    data = dict()
+    data['status'] = False
+
+    if 'file' not in request.FILES:
+        data['error'] = "No file uploaded."
+        return data
+
+    file = request.FILES['file']
+    manufacture_unit_id = request.POST.get('manufacture_unit_id')  # Assuming it's sent in POST data
+
+    try:
+        if file.name.endswith('.xlsx'):
+            df = pd.read_excel(file, header=0)
+        elif file.name.endswith('.csv') or file.name.endswith('.txt'):
+            df = pd.read_csv(file)
+        else:
+            data['error'] = "Unsupported file format."
+            return data
+    except Exception as e:
+        data['error'] = f"Error reading file: {str(e)}"
+        return data
+
+    # Extract headers from the file
+    original_headers = df.columns.tolist()
+
+    # Initialize field lists as per your previous code
+    general_fields = ['sku_number_product_code_item_number', 'model', 'mpn', 'upc_ean',
+                      'level1 category', 'level2 category', 'level3 category',
+                      'level4 category', 'level5 category', 'level6 category',
+                      'breadcrumb', 'brand_name',"brandlogo", "vendorName",
+                      'product_name', 'long_description', 'short_description',
+                      'tags', 'msrp', 'currency', 'was_price', 'list_price', 'discount',
+                      'quantity', 'quantityPrice', 'availability', 'return_applicable']
+
+    # Now, normalize the headers as per your original code logic
+    fields_list = []
+    for ins in original_headers:
+        change = False
+        normalized_field = ins.replace(" ", "").lower()
+        pattern = re.sub(r'\s+', r'\\s+', re.escape(normalized_field.lower()))
+        regex = re.compile(pattern)
+        for field in general_fields:
+            field1 = field.replace(" ", "").lower()
+            if regex.search(field1.lower()):
+                if "level1 category" in fields_list and field == "level1 category":
+                    fields_list.append("level2 category")
+                else:
+                    fields_list.append(field)
+                change = True
+                break
+
+        if not change:
+            fields_list.append(ins)
+
+    data['extract_list'] = original_headers  # Original headers for mapping
+
+    # Retrieve existing field mapping from the database
+    xl_mapping_obj = DatabaseModel.get_document(
+        unit_wise_field_mapping.objects,
+        {"manufacture_unit_id": manufacture_unit_id}
+    )
+
+    data['Database_list'] = []  # Existing field mappings
+    if xl_mapping_obj:
+        data['Database_list'] = xl_mapping_obj.attributes
+
+    # List of your database fields (excluding 'images', 'features', 'attributes')
+    data['Database_options'] = general_fields  # Excluding 'images', 'features', 'attributes'
+
+    # Save the file and get the file path
+    fs = FileSystemStorage()
+    file_path = fs.save(file.name, file)
+    file_path = os.path.join(settings.MEDIA_ROOT, file_path)
+    data['file_path'] = file_path
+
+    data['status'] = True
+    return data
+
+
+
+def saveProductCategory(manufacture_unit_id, name, level, parent_id, industry_id_str):
+    pipeline = [
+        {"$match": {"name": name,
+                    "manufacture_unit_id_str": manufacture_unit_id,
+                    "industry_id_str": industry_id_str}},
+        {
+            "$project": {
+                "_id": 1
+            }
+        },
+        {
+            "$limit": 1
+        }
+    ]
+    product_category_obj = list(product_category.objects.aggregate(*pipeline))
+    if product_category_obj:
+        product_category_id = product_category_obj[0]['_id']
+    else:
+        product_category_obj = DatabaseModel.save_documents(
+            product_category, {
+                "name": name,
+                "level": level,
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "industry_id_str": industry_id_str
+            }
+        )
+        product_category_id = product_category_obj.id
+    if parent_id:
+        DatabaseModel.update_documents(
+            product_category.objects,
+            {"id": product_category_id},
+            {"parent_category_id": ObjectId(parent_id)}
+        )
+        DatabaseModel.update_documents(
+            product_category.objects,
+            {"id": parent_id},
+            {"add_to_set__child_categories": product_category_id}
+        )
+    return product_category_id
+
+
+
+@csrf_exempt
+def save_xl_data_new(request):
+    data = dict()
+    data['status'] = False
+
+    # Parse the JSON request
+    json_request = json.loads(request.body)
+    manufacture_unit_id = json_request.get('manufacture_unit_id')
+    field_data = json_request.get('field_data')  # This is the field mapping
+    file_path = json_request.get('file_path')
+    allow_duplicate = json_request.get('allow_duplicate', False)
+
+    if not all([manufacture_unit_id, field_data, file_path]):
+        data['error'] = "Required parameters are missing."
+        return data
+
+    # Save or update the field mapping in the database
+    xl_mapping_obj = DatabaseModel.get_document(
+        unit_wise_field_mapping.objects,
+        {'manufacture_unit_id': ObjectId(manufacture_unit_id)}
+    )
+    if xl_mapping_obj:
+        DatabaseModel.update_documents(
+            unit_wise_field_mapping.objects,
+            {'manufacture_unit_id': ObjectId(manufacture_unit_id)},
+            {'attributes': field_data}
+        )
+    else:
+        DatabaseModel.save_documents(
+            unit_wise_field_mapping,
+            {'attributes': field_data, 'manufacture_unit_id': ObjectId(manufacture_unit_id)}
+        )
+
+    # Read the Excel file
+    try:
+        if file_path.endswith('.xlsx'):
+            df = pd.read_excel(file_path, header=0)
+        elif file_path.endswith('.csv') or file_path.endswith('.txt'):
+            df = pd.read_csv(file_path)
+        else:
+            data['error'] = "Unsupported file format."
+            return data
+    except Exception as e:
+        data['error'] = f"Error reading file: {str(e)}"
+        return data
+
+    # Initialize variables for error tracking
+    validation_error = []
+    xl_data = []
+    xl_contains_error_count = 0
+
+    # Process each row in the DataFrame
+    for index, row in df.iterrows():
+        row_dict = row.to_dict()
+        error_dict = dict()
+        xl_dict = dict()
+        error_dict['row'] = index + 1
+        error_dict['error'] = []
+        xl_dict['product_obj'] = dict()
+        xl_dict['product_obj']['features'] = []
+        xl_dict['product_obj']['images'] = []
+        xl_dict['product_obj']['attributes'] = {}
+        xl_dict['category_obj'] = {}
+        xl_dict['vendor_obj'] = {}
+        xl_dict['brand_obj'] = {}
+        brand_name_exist = False
+
+        # Process general fields using field_data mapping
+        for db_field, excel_field in field_data.items():
+            value = row_dict.get(excel_field)
+            # Handle missing or NaN values
+            if isinstance(value, float) and math.isnan(value):
+                value = None
+
+            # Process general fields based on db_field
+            if db_field == 'sku_number_product_code_item_number':
+                if value:
+                    xl_dict['product_obj']['sku_number_product_code_item_number'] = str(value)
+                else:
+                    error_dict['error'].append("SKU number/Product Code/Item number should be present")
+
+            elif db_field == 'model':
+                if value:
+                    xl_dict['product_obj']['model'] = str(value)
+
+            elif db_field == 'mpn':
+                if value:
+                    xl_dict['product_obj']['mpn'] = str(value)
+                else:
+                    error_dict['error'].append("MPN should be present")
+
+            elif db_field == 'upc_ean':
+                if value:
+                    xl_dict['product_obj']['upc_ean'] = str(value)
+
+            elif 'category' in db_field:
+                if value:
+                    xl_dict['category_obj'][db_field] = str(value)
+
+            elif db_field == 'breadcrumb':
+                if value:
+                    if isinstance(value, str) and "[" in value:
+                        try:
+                            data_list = ast.literal_eval(value)
+                            result = ' > '.join(data_list)
+                            xl_dict['product_obj']['breadcrumb'] = result
+                        except:
+                            xl_dict['product_obj']['breadcrumb'] = str(value)
+                    else:
+                        xl_dict['product_obj']['breadcrumb'] = str(value)
+
+            elif db_field == 'brand_name':
+                if value:
+                    brand_name_exist = True
+                    xl_dict['brand_obj']['name'] = str(value)
+                    xl_dict['product_obj']['brand_name'] = str(value)
+                else:
+                    if not brand_name_exist:
+                        error_dict['error'].append("Brand Name should be present")
+
+            elif db_field == 'brandlogo':
+                if value:
+                    xl_dict['brand_obj']['logo'] = str(value)
+
+            elif db_field == 'vendorName':
+                if value:
+                    xl_dict['vendor_obj']['name'] = str(value)
+
+            elif db_field == 'product_name':
+                if value:
+                    xl_dict['product_obj']['product_name'] = str(value).replace('"', "")
+                else:
+                    error_dict['error'].append("Product Name should be present")
+
+            elif db_field == 'long_description':
+                if value:
+                    xl_dict['product_obj']['long_description'] = str(value)
+                else:
+                    error_dict['error'].append("Long Description should be present")
+
+            elif db_field == 'short_description':
+                if value:
+                    xl_dict['product_obj']['short_description'] = str(value)
+
+            elif db_field == 'tags':
+                if value:
+                    xl_dict['product_obj']['tags'] = str(value).split(",")
+
+            elif db_field == 'msrp':
+                if value:
+                    try:
+                        numbers = re.findall(r"\d+\.\d+|\d+", str(value))
+                        result = ''.join(numbers)
+                        xl_dict['product_obj']['msrp'] = float(result)
+                    except:
+                        xl_dict['product_obj']['msrp'] = 0.0
+                else:
+                    error_dict['error'].append("MSRP should be present")
+
+            elif db_field == 'currency':
+                if value:
+                    xl_dict['product_obj']['currency'] = str(value)
+
+            elif db_field == 'was_price':
+                if value:
+                    try:
+                        numbers = re.findall(r"\d+\.\d+|\d+", str(value))
+                        result = ''.join(numbers)
+                        xl_dict['product_obj']['was_price'] = float(result)
+                    except:
+                        xl_dict['product_obj']['was_price'] = 0.0
+
+            elif db_field == 'list_price':
+                if value:
+                    try:
+                        numbers = re.findall(r"\d+\.\d+|\d+", str(value))
+                        result = ''.join(numbers)
+                        xl_dict['product_obj']['list_price'] = float(result)
+                    except:
+                        xl_dict['product_obj']['list_price'] = 0.0
+                else:
+                    error_dict['error'].append("List Price should be present")
+
+            elif db_field == 'discount':
+                if value:
+                    try:
+                        xl_dict['product_obj']['discount'] = float(str(value).replace("%", ""))
+                    except:
+                        xl_dict['product_obj']['discount'] = float(value)
+
+            elif db_field == 'quantity':
+                if value:
+                    xl_dict['product_obj']['quantity'] = int(value)
+                else:
+                    error_dict['error'].append("Quantity should be present")
+
+            elif db_field == 'availability':
+                if value:
+                    xl_dict['product_obj']['availability'] = str(value).lower() != "out of stock"
+                else:
+                    error_dict['error'].append("Availability should be present")
+
+            elif db_field == 'return_applicable':
+                if value:
+                    xl_dict['product_obj']['return_applicable'] = str(value).lower() != "no"
+                else:
+                    error_dict['error'].append("Return Applicable should be present")
+
+            # For other fields, add as needed
+
+        # Handle features
+        feature_fields = [field for field in df.columns if 'Feature' in field]
+        for feature_field in feature_fields:
+            value = row_dict.get(feature_field)
+            if value and not (isinstance(value, float) and math.isnan(value)):
+                xl_dict['product_obj']['features'].append(str(value))
+
+        # Handle images
+        image_fields = [field for field in df.columns if 'Image' in field]
+        for image_field in image_fields:
+            value = row_dict.get(image_field)
+            if value and not (isinstance(value, float) and math.isnan(value)):
+                xl_dict['product_obj']['images'].append(str(value))
+
+        # Handle attributes (pairs of attribute names and values)
+        attribute_name_fields = [field for field in df.columns if 'Attribute name' in field]
+        for attr_name_field in attribute_name_fields:
+            attr_value_field = attr_name_field.replace('name', 'Value')
+            attr_name = row_dict.get(attr_name_field)
+            attr_value = row_dict.get(attr_value_field)
+            if attr_name and attr_value and not (isinstance(attr_name, float) and math.isnan(attr_name)) and not (isinstance(attr_value, float) and math.isnan(attr_value)):
+                xl_dict['product_obj']['attributes'][str(attr_name)] = str(attr_value)
+        
+        # Additional validation
+        if len(xl_dict['category_obj']) < 2:
+            error_dict['error'].append("At least two levels of categories should be present")
+        if len(xl_dict['product_obj']['images']) == 0:
+            error_dict['error'].append("At least one image should be present")
+        if len(xl_dict['product_obj']['attributes']) < 2:
+            error_dict['error'].append("At least two attributes should be present")
+
+        # If errors exist, increment error count and add to validation_error list
+        if len(error_dict['error']) > 0:
+            xl_contains_error_count += 1
+            validation_error.append(error_dict)
+        else:
+            xl_data.append(xl_dict)
+
+    data['validation_error'] = validation_error
+    data['xl_contains_error'] = False
+    if xl_contains_error_count == 0:
+        data['status'] = True
+        data['xl_data'] = xl_data
+
+        # Proceed to save data to the database
+        save_valid_data(xl_data, manufacture_unit_id, allow_duplicate)
+    else:
+        data['xl_contains_error'] = True
+
+    # Clean up the uploaded file
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    return data
+
+def save_valid_data(xl_data, manufacture_unit_id, allow_duplicate=False):
+    duplicate_products = []
+    industry_id_str = None  # Replace with actual industry ID if available
+
+    for i in xl_data:
+        # Process categories
+        category_obj_dict = i['category_obj']
+        previous_category_id = None
+        for level_num in range(1, 7):
+            level_key = f'level{level_num} category'
+            category_name = category_obj_dict.get(level_key)
+            if category_name:
+                category_id = saveProductCategory(
+                    manufacture_unit_id, category_name, level_num, previous_category_id, industry_id_str
+                )
+                previous_category_id = category_id
+
+        if previous_category_id:
+            DatabaseModel.update_documents(
+                product_category.objects,
+                {"id": previous_category_id},
+                {"end_level": True}
+            )
+            category_id = previous_category_id
+        else:
+            category_id = None
+
+        # Brand Mapping
+        brand_obj = i['brand_obj']
+        if brand_obj.get('name'):
+            pipeline = [
+                {"$match": {"name": brand_obj['name'],
+                            "manufacture_unit_id_str": manufacture_unit_id,
+                            "industry_id_str": industry_id_str}},
+                {"$project": {"_id": 1}},
+                {"$limit": 1}
+            ]
+            brand_db_obj = list(brand.objects.aggregate(*pipeline))
+            if brand_db_obj:
+                brand_id = brand_db_obj[0]['_id']
+            else:
+                brand_db_obj = DatabaseModel.save_documents(
+                    brand, {
+                        "name": brand_obj['name'],
+                        "manufacture_unit_id_str": manufacture_unit_id,
+                        "industry_id_str": industry_id_str
+                    }
+                )
+                brand_id = brand_db_obj.id
+            i['product_obj']['brand_id'] = brand_id
+        else:
+            brand_id = None
+
+        # Vendor Mapping
+        vendor_id = None
+        vendor_obj = i['vendor_obj']
+        if vendor_obj.get('name'):
+            pipeline = [
+                {"$match": {"name": vendor_obj['name'],
+                            "manufacture_unit_id_str": manufacture_unit_id}},
+                {"$project": {"_id": 1}},
+                {"$limit": 1}
+            ]
+            vendor_db_obj = list(vendor.objects.aggregate(*pipeline))
+            if vendor_db_obj:
+                vendor_id = vendor_db_obj[0]['_id']
+            else:
+                vendor_db_obj = DatabaseModel.save_documents(
+                    vendor, {
+                        "name": vendor_obj['name'],
+                        "manufacture_unit_id_str": manufacture_unit_id
+                    }
+                )
+                vendor_id = vendor_db_obj.id
+            i['product_obj']['vendor_id'] = vendor_id
+
+        # Product Mapping
+        product_obj = i['product_obj']
+        pipeline = [
+            {"$match": {"product_name": product_obj['product_name'],
+                        "manufacture_unit_id": ObjectId(manufacture_unit_id),
+                        "industry_id_str": industry_id_str}},
+            {"$project": {"_id": 1}},
+            {"$limit": 1}
+        ]
+        products_db_obj = list(product.objects.aggregate(*pipeline))
+
+        # Prepare product object for saving
+        product_obj['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+        product_obj['industry_id_str'] = industry_id_str
+        if brand_id:
+            product_obj['brand_id'] = brand_id
+        if vendor_id:
+            product_obj['vendor_id'] = vendor_id
+        if category_id:
+            product_obj['category_id'] = category_id
+
+        # Sanitize keys to avoid dots in MongoDB field names
+        def sanitize_keys(d):
+            if isinstance(d, dict):
+                return {k.replace('.', '_'): sanitize_keys(v) for k, v in d.items()}
+            elif isinstance(d, list):
+                return [sanitize_keys(item) for item in d]
+            else:
+                return d
+
+        product_obj = sanitize_keys(product_obj)
+
+        if not products_db_obj:
+            # Save new product
+            DatabaseModel.save_documents(product, product_obj)
+        else:
+            if allow_duplicate:
+                products_id = products_db_obj[0]['_id']
+                DatabaseModel.update_documents(
+                    product.objects,
+                    {"id": products_id},
+                    product_obj
+                )
+            else:
+                # Collect duplicate products
+                duplicate_products.append(i)
+
+    # Handle duplicates as needed
+    if duplicate_products:
+        # Implement logic to handle duplicates, e.g., log or notify
+        pass

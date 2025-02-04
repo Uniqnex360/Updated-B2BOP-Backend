@@ -278,7 +278,8 @@ def obtainManufactureUnitDetails(request):
                 "name" : 1,
                 "description" : 1,
                 "location" : 1,
-                "logo" : 1
+                "logo" : 1,
+                "is_active" : 1
         }
         }
     ]
@@ -1037,61 +1038,6 @@ def obtainDashboardDetailsForManufactureAdmin(request):
             "manufacture_unit_id_str": manufacture_unit_id
                  }
     },
-    {
-        "$lookup" :{
-            "from" : "product",
-            "localField" : "product_id",
-            "foreignField" : "_id",
-            "as" : "products_ins"
-        }
-    },
-    {"$unwind" : "$products_ins"},
-    {
-        "$match": {
-            "products_ins.visible": True
-                 }
-    },
-    {
-        "$lookup" :{
-            "from" : "brand",
-            "localField" : "products_ins.brand_id",
-            "foreignField" : "_id",
-            "as" : "brand_ins"
-        }
-    },
-    {"$unwind" : "$brand_ins"},
-    {"$project" : {
-                "_id" : 0,
-                "id" : {"$toString" : "$_id"},
-                "product_id" : {"$toString" : "$product_id"},
-                "product_name" : "$name",
-                "primary_image" : {"$first":"$products_ins.images"},
-                "sku_number" : "$products_ins.sku_number_product_code_item_number",
-                "brand_name" : 1,
-                "brand_logo" : "$brand_ins.logo",
-                "total_sales" : 1,
-                "units_sold" : 1,
-                "last_updated" : {
-                    "$dateToString": {
-                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
-                        "date": "$last_updated",
-                    }
-                    },
-    }},
-    {
-        "$sort" : {"units_sold" : -1}
-    },
-    {"$limit" : 10}
-    ]
-    data['top_selling_products'] = list(top_selling_product.objects.aggregate(*(pipeline)))
-
-
-    pipeline = [
-    {
-        "$match": {
-            "manufacture_unit_id_str": manufacture_unit_id
-                 }
-    },
     {"$project" : {
                 "_id" : 0,
                 "id" : {"$toString" : "$_id"},
@@ -1263,7 +1209,7 @@ def obtainDashboardDetailsForDealer(request):
             "$match": {
                 "customer_id" : ObjectId(user_id),
                 "manufacture_unit_id_str" : manufacture_unit_id,
-                "payment_status": {"$in" : ["Completed", "Paid" ]}
+                "payment_status": {"$in" : ["Completed"]}
             }
         },
     {
@@ -1281,63 +1227,6 @@ def obtainDashboardDetailsForDealer(request):
     ]
     total_count_result = list(order.objects.aggregate(*(pipeline)))
     data['total_spend'] = total_count_result[0]['total_amount'] if total_count_result else 0
-
-
-    pipeline = [
-    {
-        "$match": {
-            "manufacture_unit_id_str": manufacture_unit_id
-                 }
-    },
-    {
-        "$lookup" :{
-            "from" : "product",
-            "localField" : "product_id",
-            "foreignField" : "_id",
-            "as" : "products_ins"
-        }
-    },
-    {"$unwind" : "$products_ins"},
-    {
-        "$lookup" :{
-            "from" : "brand",
-            "localField" : "products_ins.brand_id",
-            "foreignField" : "_id",
-            "as" : "brand_ins"
-        }
-    },
-    {"$unwind" : "$brand_ins"},
-    {
-        "$match": {
-            "products_ins.visible": True
-                 }
-    },
-    {"$project" : {
-                "_id" : 0,
-                "id" : {"$toString" : "$_id"},
-                "product_id" : {"$toString" : "$product_id"},
-                "product_name" : "$name",
-                "primary_image" : {"$first":"$products_ins.images"},
-                "sku_number" : "$products_ins.sku_number_product_code_item_number",
-                "brand_name" : 1,
-                "brand_logo" : "$brand_ins.logo",
-                "category_name" : 1,
-                "total_sales" : 1,
-                "units_sold" : 1,
-                "last_updated" : {
-                    "$dateToString": {
-                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
-                        "date": "$last_updated",
-                    }
-                    },
-    }},
-    {
-        "$sort" : {"units_sold" : -1}
-    },
-    {"$limit" : 10}
-    ]
-    data['top_selling_products'] = list(top_selling_product.objects.aggregate(*(pipeline)))
-
 
     pipeline = [
     {
@@ -1478,6 +1367,73 @@ def obtainDashboardDetailsForDealer(request):
     data['recent_orders'] = list(order.objects.aggregate(*(pipeline)))
     return data
 
+def topSellingProductsForDashBoard(request):
+    data = dict()
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    product_category_id = request.GET.get('product_category_id').replace("''","")
+    pipeline = [
+    {
+        "$match": {
+            "manufacture_unit_id_str": manufacture_unit_id
+                 }
+    },
+    {
+        "$lookup" :{
+            "from" : "product",
+            "localField" : "product_id",
+            "foreignField" : "_id",
+            "as" : "products_ins"
+        }
+    },
+    {"$unwind" : "$products_ins"},]
+    if product_category_id != None and product_category_id != "":
+        match = {
+            "$match" : {
+                "products_ins.category_id" : ObjectId(product_category_id)
+            }
+        }
+        pipeline.append(match)
+    pipeline2 = [{
+        "$lookup" :{
+            "from" : "brand",
+            "localField" : "products_ins.brand_id",
+            "foreignField" : "_id",
+            "as" : "brand_ins"
+        }
+    },
+    {"$unwind" : "$brand_ins"},
+    {
+        "$match": {
+            "products_ins.visible": True
+                 }
+    },
+    {"$project" : {
+                "_id" : 0,
+                "id" : {"$toString" : "$_id"},
+                "product_id" : {"$toString" : "$product_id"},
+                "product_name" : "$name",
+                "primary_image" : {"$first":"$products_ins.images"},
+                "sku_number" : "$products_ins.sku_number_product_code_item_number",
+                "brand_name" : 1,
+                "brand_logo" : "$brand_ins.logo",
+                "category_name" : 1,
+                "total_sales" : 1,
+                "units_sold" : 1,
+                "last_updated" : {
+                    "$dateToString": {
+                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                        "date": "$last_updated",
+                    }
+                    },
+    }},
+    {
+        "$sort" : {"units_sold" : -1}
+    },
+    {"$limit" : 10}
+    ]
+    pipeline.extend(pipeline2)
+    data['top_selling_products'] = list(top_selling_product.objects.aggregate(*(pipeline)))
+    return data
 
 def obtainIndustryList(request):
     pipeline = [
@@ -1948,3 +1904,35 @@ def obtainDashboardDetailsForSuperAdmin(request):
 #                         B2B-OP Team
 #                         """
 #             send_email(order_ins['user_email'], subject, body)
+
+
+@csrf_exempt
+def updateLogo(request):
+    data = dict()
+    json_request = JSONParser().parse(request)
+    logo = json_request['logo']
+    manufacture_unit_id = json_request['manufacture_unit_id']
+    is_active  = json_request['is_active']
+    data['is_updated'] = DatabaseModel.update_documents(manufacture_unit.objects,{"id":manufacture_unit_id},{"logo" : logo, "is_active" : is_active})
+    return data
+
+def getManufactureUnitLogo(request):
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    pipeline =[
+        {
+            "$match" : {
+                "_id" : ObjectId(manufacture_unit_id),
+                "is_active" : True
+            }
+        },
+        {
+           "$project" :{
+            "_id":0,
+            "logo" : {"$ifNull" : ['$logo',""]}
+           }
+        }
+    ]
+    unit_logo = list(manufacture_unit.objects.aggregate(*(pipeline)))
+    if unit_logo != []:
+        return unit_logo[0]
+    return {"logo" : ""}

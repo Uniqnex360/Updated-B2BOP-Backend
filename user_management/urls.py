@@ -3,13 +3,15 @@ from user_management.operations.order_and_purchase_operations import createOrUpd
 
 
 
-from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry, forgotPassword, changePassword
+from user_management.operations.user_operations import createORUpdateManufactureUnit, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry, forgotPassword, changePassword, topSellingProductsForDashBoard, updateLogo, getManufactureUnitLogo
 
 
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product
+from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new
 
 
 urlpatterns = [
+    path('save_xl_data_new/',save_xl_data_new,name='save_xl_data_new'),
+    path('upload_file_new/',upload_file_new,name='upload_file_new'),
     path('loginUser/',loginUser,name="loginUser"),
     path('createUser/',createUser,name="createUser"),
     path('forgotPassword/',forgotPassword,name="forgotPassword"),
@@ -90,6 +92,13 @@ urlpatterns = [
     # Manufacture Admin Dashboard  
     path('obtainDashboardDetailsForManufactureAdmin/',obtainDashboardDetailsForManufactureAdmin,name="obtainDashboardDetailsForManufactureAdmin"),
     path('manufactureDashboardEachDealerOrderValue/',manufactureDashboardEachDealerOrderValue,name="manufactureDashboardEachDealerOrderValue"),
+    path('topSellingProductsForDashBoard/',topSellingProductsForDashBoard,name='topSellingProductsForDashBoard'),
+    path('obtainEndlevelcategoryList/',obtainEndlevelcategoryList,name='obtainEndlevelcategoryList'),
+
+    # LOGO ACTIONS
+    path('updateLogo/',updateLogo,name="updateLogo"),
+    path('getManufactureUnitLogo/',getManufactureUnitLogo,name="getManufactureUnitLogo"), 
+
 
     #Wishlist actions
     path('createWishList/',createWishList,name="createWishList"),
