@@ -2313,7 +2313,8 @@ def upload_file_new(request):
         return data
 
     file = request.FILES['file']
-    manufacture_unit_id = request.POST.get('manufacture_unit_id')  # Assuming it's sent in POST data
+    manufacture_unit_id = request.GET.get('manufacture_unit_id')
+    industry_id_str = request.GET.get('industry_id_str')
 
     try:
         if file.name.endswith('.xlsx'):
@@ -2337,29 +2338,31 @@ def upload_file_new(request):
                       'breadcrumb', 'brand_name',"brandlogo", "vendorName",
                       'product_name', 'long_description', 'short_description',
                       'tags', 'msrp', 'currency', 'was_price', 'list_price', 'discount',
-                      'quantity', 'quantityPrice', 'availability', 'return_applicable']
+                      'quantity', 'availability', 'return_applicable']
 
     # Now, normalize the headers as per your original code logic
     fields_list = []
     for ins in original_headers:
-        change = False
-        normalized_field = ins.replace(" ", "").lower()
-        pattern = re.sub(r'\s+', r'\\s+', re.escape(normalized_field.lower()))
-        regex = re.compile(pattern)
-        for field in general_fields:
-            field1 = field.replace(" ", "").lower()
-            if regex.search(field1.lower()):
-                if "level1 category" in fields_list and field == "level1 category":
-                    fields_list.append("level2 category")
-                else:
-                    fields_list.append(field)
-                change = True
-                break
+        new_ins = ins.lower()
+        if not new_ins.startswith(("att", "ima", "fea")):
+            change = False
+            normalized_field = ins.replace(" ", "").lower()
+            pattern = re.sub(r'\s+', r'\\s+', re.escape(normalized_field.lower()))
+            regex = re.compile(pattern)
+            for field in general_fields:
+                field1 = field.replace(" ", "").lower()
+                if regex.search(field1.lower()):
+                    if "level1 category" in fields_list and field == "level1 category":
+                        fields_list.append("level2 category")
+                    else:
+                        fields_list.append(field)
+                    change = True
+                    break
 
-        if not change:
-            fields_list.append(ins)
+            if not change:
+                fields_list.append(ins)
 
-    data['extract_list'] = original_headers  # Original headers for mapping
+    data['extract_list'] = fields_list  # Original headers for mapping
 
     # Retrieve existing field mapping from the database
     xl_mapping_obj = DatabaseModel.get_document(
@@ -2379,6 +2382,7 @@ def upload_file_new(request):
     file_path = fs.save(file.name, file)
     file_path = os.path.join(settings.MEDIA_ROOT, file_path)
     data['file_path'] = file_path
+    data['industry_id_str'] = industry_id_str
 
     data['status'] = True
     return data
@@ -2433,12 +2437,13 @@ def save_xl_data_new(request):
     data['status'] = False
 
     # Parse the JSON request
-    json_request = json.loads(request.body)
+    json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request.get('manufacture_unit_id')
     field_data = json_request.get('field_data')  # This is the field mapping
     file_path = json_request.get('file_path')
     allow_duplicate = json_request.get('allow_duplicate', False)
-
+    industry_id_str = json_request.get('industry_id_str')
+    field_data = json.loads(field_data)
     if not all([manufacture_unit_id, field_data, file_path]):
         data['error'] = "Required parameters are missing."
         return data
@@ -2500,7 +2505,6 @@ def save_xl_data_new(request):
             # Handle missing or NaN values
             if isinstance(value, float) and math.isnan(value):
                 value = None
-
             # Process general fields based on db_field
             if db_field == 'sku_number_product_code_item_number':
                 if value:
@@ -2522,6 +2526,7 @@ def save_xl_data_new(request):
                 if value:
                     xl_dict['product_obj']['upc_ean'] = str(value)
 
+            
             elif 'category' in db_field:
                 if value:
                     xl_dict['category_obj'][db_field] = str(value)
@@ -2638,27 +2643,50 @@ def save_xl_data_new(request):
             # For other fields, add as needed
 
         # Handle features
-        feature_fields = [field for field in df.columns if 'Feature' in field]
+        feature_fields = [field for field in df.columns if field.lower().startswith(("feature"))]
         for feature_field in feature_fields:
             value = row_dict.get(feature_field)
             if value and not (isinstance(value, float) and math.isnan(value)):
                 xl_dict['product_obj']['features'].append(str(value))
 
         # Handle images
-        image_fields = [field for field in df.columns if 'Image' in field]
+        image_fields = [field for field in df.columns if field.lower().startswith(("image"))]
         for image_field in image_fields:
             value = row_dict.get(image_field)
             if value and not (isinstance(value, float) and math.isnan(value)):
                 xl_dict['product_obj']['images'].append(str(value))
 
         # Handle attributes (pairs of attribute names and values)
-        attribute_name_fields = [field for field in df.columns if 'Attribute name' in field]
-        for attr_name_field in attribute_name_fields:
-            attr_value_field = attr_name_field.replace('name', 'Value')
-            attr_name = row_dict.get(attr_name_field)
-            attr_value = row_dict.get(attr_value_field)
-            if attr_name and attr_value and not (isinstance(attr_name, float) and math.isnan(attr_name)) and not (isinstance(attr_value, float) and math.isnan(attr_value)):
-                xl_dict['product_obj']['attributes'][str(attr_name)] = str(attr_value)
+        attribute_fields = [field for field in df.columns if field.lower().startswith(("attr"))]
+        for attr_field in attribute_fields:
+            value = row_dict.get(attr_field)
+            if pd.notnull(value) and (attr_field == 'attributes' or attr_field in attribute_fields):
+                try:
+                    if "{" in str(value):
+                        try:
+                            xl_dict['product_obj']['attributes'] = ast.literal_eval(value)
+                        except:
+                            pass
+                    else:
+                        found_empty_key = False
+                        for key in xl_dict['product_obj']['attributes']:
+                            if xl_dict['product_obj']['attributes'][key] == "":
+                                xl_dict['product_obj']['attributes'][key] = value
+                                found_empty_key = True
+                                break
+                        # If no empty key was found, create a new one
+                        if not found_empty_key:
+                            xl_dict['product_obj']['attributes'][str(value)] = ""
+                except:
+                    found_empty_key = False
+                    for key in xl_dict['product_obj']['attributes']:
+                        if xl_dict['product_obj']['attributes'][key] == "":
+                            xl_dict['product_obj']['attributes'][key] = value
+                            found_empty_key = True
+                            break
+                    # If no empty key was found, create a new one
+                    if not found_empty_key:
+                        xl_dict['product_obj']['attributes'][str(value)] = ""
         
         # Additional validation
         if len(xl_dict['category_obj']) < 2:
@@ -2679,10 +2707,10 @@ def save_xl_data_new(request):
     data['xl_contains_error'] = False
     if xl_contains_error_count == 0:
         data['status'] = True
-        data['xl_data'] = xl_data
+        # data['xl_data'] = xl_data
 
         # Proceed to save data to the database
-        save_valid_data(xl_data, manufacture_unit_id, allow_duplicate)
+        save_valid_data(xl_data, manufacture_unit_id, industry_id_str, allow_duplicate)
     else:
         data['xl_contains_error'] = True
 
@@ -2692,10 +2720,9 @@ def save_xl_data_new(request):
 
     return data
 
-def save_valid_data(xl_data, manufacture_unit_id, allow_duplicate=False):
+def save_valid_data(xl_data, manufacture_unit_id, industry_id_str, allow_duplicate=False):
     duplicate_products = []
-    industry_id_str = None  # Replace with actual industry ID if available
-
+    
     for i in xl_data:
         # Process categories
         category_obj_dict = i['category_obj']
