@@ -508,6 +508,54 @@ def obtainProductsList(request):
     price_to = json_request.get('price_to')
     industry_id_str = json_request.get('industry_id')
     brand_id_list = json_request.get('brand_id_list')
+    category_name = json_request.get('collection_name')
+    category_filters = json_request.get('category_filters', [])
+    if category_name != None and category_name != "":
+        if not category_name:
+            return {"error": "category_name is required"}
+        category_id = DatabaseModel.get_document(product_category.objects, {"name": category_name},['id']).id
+        match_conditions = {
+            "category_id": category_id,
+            # "visible": True,
+            # "availability": True
+        }
+
+        for filter_name,filter_value in category_filters.items():
+            # filter_name = filter.get('name')
+            # filter_value = filter.get('value')
+            if filter_name and filter_value:
+                if isinstance(filter_value, list):
+                    match_conditions[f"attributes.{filter_name}"] = {"$in": filter_value}
+                else:
+                    match_conditions[f"attributes.{filter_name}"] = filter_value
+        pipeline = [
+            {"$match": match_conditions},
+            {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": {"$ifNull": ["$product_name", "N/A"]},
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "sku_number": {"$ifNull": ["$sku_number_product_code_item_number", "N/A"]},
+                "mpn": {"$ifNull": ["$mpn", "N/A"]},
+                "msrp": {"$ifNull": [{"$round": ["$msrp", 2]}, 0.0]},
+                "was_price": {"$ifNull": [{"$round": ["$was_price", 2]}, 0.0]},
+                "brand_name": {"$ifNull": ["$brand_name", "N/A"]},
+                "visible": {"$ifNull": ["$visible", False]},
+                "end_level_category": {"$ifNull": ["$product_category_ins.name", "N/A"]},
+                # "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+                "price": {"$ifNull": [{"$round": ["$list_price", 2]}, 0.0]},
+                "currency": {"$ifNull": ["$currency", "N/A"]},
+                "availability": {"$ifNull": ["$availability", False]},
+                "discount": {"$ifNull": ["$discount", 0]},
+                "quantity": {"$ifNull": ["$quantity", 0]},
+                "upc_ean": {"$ifNull": ["$upc_ean", "N/A"]},
+            }
+            }
+        ]
+
+        products = list(product.objects.aggregate(pipeline))
+        return products
     if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
         brand_id_list = [ObjectId(ins) for ins in brand_id_list]
     
@@ -1158,35 +1206,35 @@ def obtainProductDetails(request):
            "$project" :{
             "_id":0,
             "id" : {"$toString" : "$_id"},
-            "product_name" : 1,
-            "sku_number_product_code_item_number" : 1,
-            "model" : 1,
-            "mpn" : 1,
-            "upc_ean" : 1,
+            "product_name" : {"$ifNull": ["$product_name", "N/A"]},
+            "sku_number_product_code_item_number" : {"$ifNull": ["$sku_number_product_code_item_number", "N/A"]},
+            "model" : {"$ifNull": ["$model", "N/A"]},
+            "mpn" : {"$ifNull": ["$mpn", "N/A"]},
+            "upc_ean" : {"$ifNull": ["$upc_ean", "N/A"]},
             "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
-            "long_description" : 1,
-            "short_description" : 1,
-            "list_price" : 1,
+            "long_description" : {"$ifNull": ["$long_description", "N/A"]},
+            "short_description" : {"$ifNull": ["$short_description", "N/A"]},
+            "list_price" : {"$ifNull": ["$list_price", 0.0]},
             "msrp" : {"$ifNull" : ["$msrp",0.0]},
             "was_price" : {"$ifNull" : ["$was_price",0.0]},
             "discount": { 
             "$concat": [
-                { "$toString": { "$round": ["$discount", 2] } }, 
+                { "$toString": { "$round": [{"$ifNull": ["$discount", 0]}, 2] } }, 
                 "%" 
             ] 
             },
-            "brand_name" : 1,
+            "brand_name" : {"$ifNull": ["$brand_name", "N/A"]},
             "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
-            "currency" : 1,
-            "quantity" : 1,
-            "availability" : 1,
-            "images" : 1,
-            "attributes" : 1,
-            "features" : 1,
-            "from_the_manufacture" : 1,
-            "visible" : 1,
-            "end_level_category" : "$product_category_ins.name",
-            "industry_id_str" : {"$ifNull": ["$industry_id_str",""]}
+            "currency" : {"$ifNull": ["$currency", "N/A"]},
+            "quantity" : {"$ifNull": ["$quantity", 0]},
+            "availability" : {"$ifNull": ["$availability", False]},
+            "images" : {"$ifNull": ["$images", []]},
+            "attributes" : {"$ifNull": ["$attributes", {}]},
+            "features" : {"$ifNull": ["$features", []]},
+            "from_the_manufacture" : {"$ifNull": ["$from_the_manufacture", "N/A"]},
+            "visible" : {"$ifNull": ["$visible", False]},
+            "end_level_category" : {"$ifNull": ["$product_category_ins.name", "N/A"]},
+            "industry_id_str" : {"$ifNull": ["$industry_id_str","N/A"]}
            }
         }
     ]
@@ -1197,6 +1245,14 @@ def obtainProductDetails(request):
         else:
             product_list[0]['industry_name'] = "N/A"
         product_list = product_list[0]
+    def replace_nan_with_none(d):
+        for key, value in d.items():
+            if isinstance(value, dict):
+                replace_nan_with_none(value)
+            elif isinstance(value, float) and math.isnan(value):
+                d[key] = None
+
+    replace_nan_with_none(product_list)
     return product_list
 
 
