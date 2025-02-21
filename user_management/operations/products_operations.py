@@ -534,9 +534,9 @@ def obtainProductsList(request):
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
-                "name": {"$ifNull": ["$product_name", "N/A"]},
+                "product_name": {"$ifNull": ["$product_name", "N/A"]},
                 "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
-                "sku_number": {"$ifNull": ["$sku_number_product_code_item_number", "N/A"]},
+                "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", "N/A"]},
                 "mpn": {"$ifNull": ["$mpn", "N/A"]},
                 "msrp": {"$ifNull": [{"$round": ["$msrp", 2]}, 0.0]},
                 "was_price": {"$ifNull": [{"$round": ["$was_price", 2]}, 0.0]},
@@ -2956,3 +2956,32 @@ def save_valid_data(xl_data, manufacture_unit_id, industry_id_str, allow_duplica
 #         DatabaseModel.update_documents(product.objects, {"id": product_ins.id}, {"images": images})
 
 # add_random_images_to_products()
+
+
+
+# def updateindustryproject():
+#     products=DatabaseModel.list_documents(product.objects, {"industry_id_str" : "67b80d90ba414ab9b493b595"})
+#     for product_ins in products:
+#         brand_name = product_ins.brand_id.name
+#         long_description = ""
+#         msrp = 0.0              
+#         currency = "$"
+#         was_price = 15         
+#         list_price = 10      
+#         discount = 1 
+#         availability = True     
+#         return_applicable = True 
+#         visible = True
+#         DatabaseModel.update_documents(product.objects, {"id": product_ins.id}, {
+#             "brand_name": brand_name,
+#             "long_description": long_description,
+#             "msrp": msrp,
+#             "currency": currency,
+#             "was_price": was_price,
+#             "list_price": list_price,
+#             "discount": discount,
+#             "availability": availability,
+#             "return_applicable": return_applicable,
+#             "visible": visible
+#         })
+# # updateindustryproject()
