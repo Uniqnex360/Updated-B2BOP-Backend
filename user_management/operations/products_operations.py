@@ -551,6 +551,10 @@ def obtainProductsList(request):
                 "quantity": {"$ifNull": ["$quantity", 0]},
                 "upc_ean": {"$ifNull": ["$upc_ean", "N/A"]},
             }
+            },
+            {
+                "$sort" : {
+                    "id" : -1
             }
         ]
 
@@ -646,7 +650,13 @@ def obtainProductsList(request):
                         sort_by: int(sort_by_value)
                     }
                 }
-            pipeline.append(sorting_pipeline)
+        else:
+            sorting_pipeline = {
+                    "$sort": {
+                        "id": -1
+                    }
+                }
+        pipeline.append(sorting_pipeline)
         product_list = list(product.objects.aggregate(*(pipeline)))
 
     elif is_parent != None and is_parent != "" and is_parent == True:
@@ -757,7 +767,14 @@ def obtainProductsList(request):
                         sort_by: int(sort_by_value)
                     }
                 }
-            pipeline.append(sorting_pipeline)
+            
+        else:
+            sorting_pipeline = {
+                    "$sort": {
+                        "id": -1
+                    }
+                }
+        pipeline.append(sorting_pipeline)
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
