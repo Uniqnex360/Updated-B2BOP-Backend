@@ -555,7 +555,7 @@ def obtainProductsList(request):
             {
                 "$sort" : {
                     "id" : -1
-            }
+            }}
         ]
 
         products = list(product.objects.aggregate(pipeline))
