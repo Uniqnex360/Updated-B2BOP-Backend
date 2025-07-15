@@ -1,14 +1,14 @@
-# ✅ Add build system dependencies FIRST
-setuptools>=65.0.0
-wheel>=0.38.0
-build
+# ✅ Build system dependencies - MUST be first
+pip>=23.0.0
+setuptools>=68.0.0
+wheel>=0.41.0
 
 # Core dependencies
 amqp==5.3.1
 asgiref==3.8.1
 bcrypt==3.1.7
 billiard==4.2.1
-blinker==1.4
+blinker==1.8.2
 celery==5.4.0
 certifi==2024.8.30
 chardet==3.0.4
@@ -17,7 +17,7 @@ click==8.1.8
 click-didyoumean==0.3.1
 click-plugins==1.1.1
 click-repl==0.3.0
-colorama==0.4.3
+colorama==0.4.6
 cron-descriptor==1.4.5
 cryptography==41.0.3
 gunicorn==20.1.0
