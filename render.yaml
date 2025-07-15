@@ -1,25 +1,7 @@
 services:
   - type: web
-    name: b2bop-web
-    env: python
-    runtime: python-3.11.9  # Changed from just "python"
-    buildCommand: pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
-    startCommand: gunicorn b2bop_project.wsgi
-    region: oregon
+    name: b2bop-app
+    env: docker
     plan: free
-    branch: main
+    branch: main  # or replace with your actual branch name
     autoDeploy: true
-
-    envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: b2bop_project.settings
-      - key: SECRET_KEY
-        value: django-insecure-g56qefvrrgnx_ygpsz-#!ao71tv@!fjk49mukq68@lh#p*6%t+
-      - key: DEBUG
-        value: "False"
-      - key: MAILGUN_API_KEY
-        value: ${MAILGUN_API_KEY}
-      - key: MAILGUN_DOMAIN
-        value: ${MAILGUN_DOMAIN}
-      - key: SENDGRID_API_KEY
-        value: ${SENDGRID_API_KEY}
