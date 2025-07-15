@@ -33,8 +33,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 MONGODB_DATABASES = {
     'default': {
-        'name': MONGODB_NAME,  # Your MongoDB database name
-        'host': MONGODB_HOST,     # MongoDB server address
+        'name': os.getenv('MONGODB_NAME'),  # Your MongoDB database name
+        'host': os.getenv('MONGODB_HOST'),     # MongoDB server address
         'port': 27017,           # MongoDB server port
     },
 }
