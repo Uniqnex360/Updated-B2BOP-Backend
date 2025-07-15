@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
-from .env import *
+# from .env import *
 from corsheaders.defaults import default_headers
 import os
 
