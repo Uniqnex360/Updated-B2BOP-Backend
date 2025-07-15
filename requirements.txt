@@ -1,7 +1,8 @@
-# ✅ Build system dependencies - MUST be first
 pip>=23.0.0
 setuptools>=68.0.0
 wheel>=0.41.0
+cython>=3.0.0
+
 
 # Core dependencies
 amqp==5.3.1
@@ -31,9 +32,8 @@ email-validator==2.2.0
 et-xmlfile==1.1.0
 fuzzywuzzy==0.18.0
 idna==3.10
-Levenshtein==0.25.1
 mongoengine==0.29.1
-numpy==1.24.4
+numpy==1.24.3
 openpyxl==3.1.5
 pandas==2.0.3
 pillow==10.4.0
