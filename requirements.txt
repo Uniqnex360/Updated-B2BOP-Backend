@@ -1,6 +1,6 @@
 # ✅ Add build system dependencies FIRST
-setuptools>=42
-wheel
+setuptools>=65.0.0
+wheel>=0.38.0
 build
 
 # Core dependencies
