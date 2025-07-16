@@ -15,7 +15,7 @@ from pathlib import Path
 from corsheaders.defaults import default_headers
 import os
 import mongoengine
-mongoengine.connect('B2BOP', host='localhost', port=27017)
+# mongoengine.connect('B2BOP', host='localhost', port=27017)
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -36,7 +36,6 @@ MONGODB_DATABASES = {
     'default': {
         'name': os.getenv('MONGODB_NAME'),  # Your MongoDB database name
         'host': os.getenv('MONGODB_HOST'),     # MongoDB server address
-        'port': 27017,           # MongoDB server port
     },
 }
 
