@@ -150,50 +150,15 @@ class customMiddleware:
     @skip_for_paths()
     def __call__(self, request):
         response = self.get_response(request)
-        if isinstance(response,Response):
-            response.data={
-                'data':response.data
-            }
-        # try:
-        #     jwtObj = check_authentication(request)
-        #     if jwtObj != None:
-        #         refresh_cookies(request, response)
-                
-                
-        #         is_authorised = True
-        #         if is_authorised:
-        #             res = self.get_response(request)
-        #             if isinstance(res, Response):
-        #                 response.data['data'] = res.data
-        #             else:
-        #                 response.data['data'] = res
-        #         else:
-        #             response.status_code = status.HTTP_401_UNAUTHORIZED
-        #     else:
-        #         response.status_code = status.HTTP_401_UNAUTHORIZED
-        #         response.data['message'] = 'Invalid token'
-        # except Exception as e:
-        #     print("Exception Class --", e.__class__)
-        #     print("Exception Class name --", e.__class__.__name__)
-        #     print("Exception --")
-        #     print(e)
-        #     response.data['data'] = False
-        #     if (e.__class__.__name__ == 'ExpiredSignatureError' or e.__class__.__name__ == 'DecodeError'):
-        #         response.status_code = status.HTTP_401_UNAUTHORIZED
-        #         response.data['message'] = 'Invalid token'
-        #     elif e.__class__.__name__ == 'ValidationError':
-        #         print(str(e))
-        #         print(e.message)
-        #     else:
-        #         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        # res = self.get_response(request)
-        # if isinstance(res, Response):
-        #     response.data['data'] = res.data
-        # else:
-        #     response.data['data'] = res
-        response.accepted_renderer = JSONRenderer()
-        response.accepted_media_type = "application/json"
-        response.renderer_context = {}
-        if hasattr(response, 'render') and callable(response.render):
-            response.render()
+
+    # Convert dict or list responses to DRF Response
+        if isinstance(response, (dict, list)):
+            response = Response(response)
+
+    # Only set renderer if it's a DRF Response and not already rendered
+        if isinstance(response, Response) and not hasattr(response, 'accepted_renderer'):
+            response.accepted_renderer = JSONRenderer()
+            response.accepted_media_type = 'application/json'
+            response.renderer_context = {}
+
         return response
