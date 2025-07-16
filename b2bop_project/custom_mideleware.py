@@ -149,7 +149,11 @@ class customMiddleware:
 
     @skip_for_paths()
     def __call__(self, request):
-        response = createJsonResponse(request)
+        response = self.get_response(request)
+        if isinstance(response,Response):
+            response.data={
+                'data':response.data
+            }
         # try:
         #     jwtObj = check_authentication(request)
         #     if jwtObj != None:
@@ -182,11 +186,11 @@ class customMiddleware:
         #         print(e.message)
         #     else:
         #         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        res = self.get_response(request)
-        if isinstance(res, Response):
-            response.data['data'] = res.data
-        else:
-            response.data['data'] = res
+        # res = self.get_response(request)
+        # if isinstance(res, Response):
+        #     response.data['data'] = res.data
+        # else:
+        #     response.data['data'] = res
         response.accepted_renderer = JSONRenderer()
         response.accepted_media_type = "application/json"
         response.renderer_context = {}
