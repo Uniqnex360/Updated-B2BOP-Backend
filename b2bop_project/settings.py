@@ -14,7 +14,8 @@ from pathlib import Path
 # from .env import *
 from corsheaders.defaults import default_headers
 import os
-
+import mongoengine
+mongoengine.connect('B2BOP', host='localhost', port=27017)
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -54,6 +55,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 CORS_ALLOWED_ORIGINS = [
+    "https://b2bop-frontend.onrender.com",
     "http://localhost:3000",
     "http://192.168.30.191:4200",
     "https://b2-b-op-git-dev-lakshmi-lakshmis-projects-276e5906.vercel.app",
@@ -61,6 +63,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
+    "https://b2bop-frontend.onrender.com",
     "http://192.168.30.191:4200",
     "https://b2-b-op-git-dev-lakshmi-lakshmis-projects-276e5906.vercel.app",
     "https://b2bop.netlify.app"

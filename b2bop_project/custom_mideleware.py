@@ -194,5 +194,6 @@ class customMiddleware:
         response.accepted_renderer = JSONRenderer()
         response.accepted_media_type = "application/json"
         response.renderer_context = {}
-        response.render()
+        if hasattr(response, 'render') and callable(response.render):
+            response.render()
         return response
