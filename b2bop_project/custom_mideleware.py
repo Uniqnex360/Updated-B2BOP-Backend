@@ -150,43 +150,20 @@ class customMiddleware:
     @skip_for_paths()
     def __call__(self, request):
         response = createJsonResponse(request)
-        # try:
-        #     jwtObj = check_authentication(request)
-        #     if jwtObj != None:
-        #         refresh_cookies(request, response)
-                
-                
-        #         is_authorised = True
-        #         if is_authorised:
-        #             res = self.get_response(request)
-        #             if isinstance(res, Response):
-        #                 response.data['data'] = res.data
-        #             else:
-        #                 response.data['data'] = res
-        #         else:
-        #             response.status_code = status.HTTP_401_UNAUTHORIZED
-        #     else:
-        #         response.status_code = status.HTTP_401_UNAUTHORIZED
-        #         response.data['message'] = 'Invalid token'
-        # except Exception as e:
-        #     print("Exception Class --", e.__class__)
-        #     print("Exception Class name --", e.__class__.__name__)
-        #     print("Exception --")
-        #     print(e)
-        #     response.data['data'] = False
-        #     if (e.__class__.__name__ == 'ExpiredSignatureError' or e.__class__.__name__ == 'DecodeError'):
-        #         response.status_code = status.HTTP_401_UNAUTHORIZED
-        #         response.data['message'] = 'Invalid token'
-        #     elif e.__class__.__name__ == 'ValidationError':
-        #         print(str(e))
-        #         print(e.message)
-        #     else:
-        #         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
         res = self.get_response(request)
+
+        # ✅ If it's already an HttpResponse (404, 500, etc.), return as is
+        from django.http import HttpResponseBase
+        if isinstance(res, HttpResponseBase):
+            return res
+
+        # ✅ Otherwise, wrap into JSON response
         if isinstance(res, Response):
             response.data['data'] = res.data
         else:
             response.data['data'] = res
+
         response.accepted_renderer = JSONRenderer()
         response.accepted_media_type = "application/json"
         response.renderer_context = {}

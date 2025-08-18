@@ -2791,7 +2791,7 @@ def save_xl_data_new(request):
     if os.path.exists(file_path):
         os.remove(file_path)
 
-    return data
+    return JsonResponse(data)
 
 def save_valid_data(xl_data, manufacture_unit_id, industry_id_str, allow_duplicate=False):
     duplicate_products = []
