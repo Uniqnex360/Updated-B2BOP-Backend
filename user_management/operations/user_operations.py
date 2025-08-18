@@ -472,6 +472,7 @@ def getUserName(manufacture_unit_name, name):
     return username
 
 import ast
+from django.http import JsonResponse
 def generateUserName(request):
     data = dict()
 
@@ -566,7 +567,7 @@ def generateUserName(request):
 #         DatabaseModel.update_documents(order.objects, {"id": order_ins.id}, {"set__shipping_address_id": random_address_id})
         
 
-    return data
+    return JsonResponse(data)
 
 
 def send_email(to_email, subject, body):

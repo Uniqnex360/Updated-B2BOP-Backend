@@ -107,6 +107,4 @@ urlpatterns = [
 
     #Shipping Actions
     path('getAvaliableCarrierList/',getAvaliableCarrierList,name="getAvaliableCarrierList"),
-
-   
 ]
