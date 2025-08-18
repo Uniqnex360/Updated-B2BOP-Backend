@@ -28,4 +28,4 @@ COPY . /app/
 EXPOSE 8000
 
 # Run gunicorn server
-CMD ["gunicorn", "b2bop_project.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "b2bop_project.wsgi:application", "--bind", "0.0.0.0:8000", "--timeout", "120", "--workers", "3", "--threads", "2"]
