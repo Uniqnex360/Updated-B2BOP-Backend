@@ -15,6 +15,15 @@ from pathlib import Path
 from corsheaders.defaults import default_headers
 import os
 import mongoengine
+import os
+from pymongo import MongoClient
+
+# Load Mongo URI from environment variable
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/b2bopdb")
+
+# Connect
+client = MongoClient(MONGO_URI)
+db = client.get_database("user_management")  # database name
 
 # mongoengine.connect('B2BOP', host='localhost', port=27017)
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
