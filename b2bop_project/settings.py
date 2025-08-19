@@ -16,15 +16,16 @@ from corsheaders.defaults import default_headers
 import os
 import mongoengine
 import os
-from pymongo import MongoClient
+# ❌ COMMENTED OUT - This was causing conflicts
+# from pymongo import MongoClient
 
 # Load Mongo URI from environment variable
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/b2bopdb")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/user_management")
 
-
+# ❌ COMMENTED OUT - This was creating duplicate connections
 # Connect
-client = MongoClient(MONGO_URI)
-db = client.get_database("user_management")  # database name
+# client = MongoClient(MONGO_URI)
+# db = client.get_database("user_management")  # database name
 
 # mongoengine.connect('B2BOP', host='localhost', port=27017)
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -41,16 +42,14 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # MONGODB_HOST = os.getenv('MONGODB_HOST')
 # MONGODB_NAME = os.getenv('MONGODB_NAME')
 
-
-
-MONGODB_DATABASES = {
-    'default': {
-        'name': 'user_management',  # Your MongoDB database name
-        'host': 'localhost',
-        'port': 27017,
-    }
-}
-
+# ❌ COMMENTED OUT - This was forcing localhost connection
+# MONGODB_DATABASES = {
+#     'default': {
+#         'name': 'user_management',  # Your MongoDB database name
+#         'host': 'localhost',
+#         'port': 27017,
+#     }
+# }
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-3)*o)j&1$08q65k4vsn2-&%ymv!dfe4*#1d)1d4pnudal$)gw*'
@@ -63,7 +62,6 @@ ALLOWED_HOSTS = ["*"]
 CORS_ALLOW_ALL_ORIGINS = True
 # CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_CREDENTIALS = True
-
 
 CORS_ALLOWED_ORIGINS = [
     "https://b2bop-frontend-react.onrender.com",
@@ -132,7 +130,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'b2bop_project.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -165,7 +162,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
@@ -177,7 +173,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
@@ -187,8 +182,6 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-
 
 MAILGUN_API_KEY = os.getenv('MAILGUN_API_KEY')
 MAILGUN_DOMAIN = os.getenv('MAILGUN_DOMAIN')
