@@ -42,14 +42,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # MONGODB_HOST = os.getenv('MONGODB_HOST')
 # MONGODB_NAME = os.getenv('MONGODB_NAME')
 
-# ❌ COMMENTED OUT - This was forcing localhost connection
-# MONGODB_DATABASES = {
-#     'default': {
-#         'name': 'user_management',  # Your MongoDB database name
-#         'host': 'localhost',
-#         'port': 27017,
-#     }
-# }
+MONGODB_DATABASES = {
+    'default': {
+        'name': 'user_management',
+        'host': os.getenv('MONGO_URI', 'mongodb://localhost:27017/user_management'),
+    }
+}
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-3)*o)j&1$08q65k4vsn2-&%ymv!dfe4*#1d)1d4pnudal$)gw*'

@@ -22,20 +22,23 @@
 
 
 from django.apps import AppConfig
-from mongoengine import connect, disconnect
-import os                              # ✅ ADD this import
+# COMMENT OUT - django_mongoengine handles connection
+# from mongoengine import connect, disconnect
+# import os
+
 class UserManagementConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'user_management'
     
     def ready(self):
-        disconnect(alias='default')  # Disconnect existing connection if any
+        #  COMMENT OUT - Let django_mongoengine handle connection
+        # disconnect(alias='default')
+        # mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/user_management')
+        # 
+        # try:
+        #     connect(host=mongo_uri)
+        #     print(f"✅ Connected to MongoDB successfully")
+        # except Exception as e:
+        #     print(f"MongoDB connection failed: {e}")
         
-        # ✅ REPLACE the connect() section with this:
-        mongo_uri = os.getenv('MONGO_URI', 'mongodb://localhost:27017/user_management')
-        
-        try:
-            connect(host=mongo_uri)
-            print(f"✅ Connected to MongoDB successfully")
-        except Exception as e:
-            print(f"❌ MongoDB connection failed: {e}")
+        print("✅ User management app ready")
