@@ -21,6 +21,7 @@ from pymongo import MongoClient
 # Load Mongo URI from environment variable
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/b2bopdb")
 
+
 # Connect
 client = MongoClient(MONGO_URI)
 db = client.get_database("user_management")  # database name
