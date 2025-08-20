@@ -1824,28 +1824,52 @@ def save_file(request):
 
 @csrf_exempt
 def productSearch(request):
-    json_request = JSONParser().parse(request)
-    search_query = re.escape(json_request['search_query'])
-    # search_query = json_request['search_query']
-    manufacture_unit_id = json_request['manufacture_unit_id']
-    role_name = json_request.get('role_name')
-    sort_by = json_request.get("sort_by")
-    sort_by_value = json_request.get("sort_by_value")
-    skip = json_request.get("skip")
-    limit = json_request.get("limit")
-    product_category_id = request.GET.get('product_category_id')
-    search_query = search_query.strip()
+    # json_request = JSONParser().parse(request)
+    # search_query = re.escape(json_request['search_query'])
+    # manufacture_unit_id = json_request['manufacture_unit_id']
+    # role_name = json_request.get('role_name')
+    # sort_by = json_request.get("sort_by")
+    # sort_by_value = json_request.get("sort_by_value")
+    # skip = json_request.get("skip")
+    # limit = json_request.get("limit")
+    # product_category_id = request.GET.get('product_category_id')
+
+    # NEW: Handle both GET (query params) and POST (JSON body)
+    if request.method == "GET":
+        search_query = request.GET.get("search_query", "").strip()
+        manufacture_unit_id = request.GET.get("manufacture_unit_id")
+        role_name = request.GET.get("role_name")
+        sort_by = request.GET.get("sort_by")
+        sort_by_value = request.GET.get("sort_by_value")
+        skip = int(request.GET.get("skip", 0))
+        limit = int(request.GET.get("limit", 10))
+        product_category_id = request.GET.get("product_category_id")
+    else:
+        json_request = JSONParser().parse(request)
+        search_query = re.escape(json_request.get("search_query", "").strip())
+        manufacture_unit_id = json_request.get("manufacture_unit_id")
+        role_name = json_request.get("role_name")
+        sort_by = json_request.get("sort_by")
+        sort_by_value = json_request.get("sort_by_value")
+        skip = json_request.get("skip", 0)
+        limit = json_request.get("limit", 10)
+        product_category_id = json_request.get("product_category_id")
+
     try:
         spell = SpellChecker()
         search_query = ' '.join([spell.correction(word) for word in search_query.split()])
     except:
         pass
+
     match = dict()
-    match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-    if role_name != None:
+    if manufacture_unit_id:
+        try:
+            match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+        except Exception:
+            pass
+    if role_name is not None:
         match['visible'] = True
 
-    
     pipeline = [
         {
             "$match": match
@@ -1887,7 +1911,6 @@ def productSearch(request):
                     {"model": {"$regex": search_query, "$options": "i"}},
                     {"upc_ean": {"$regex": search_query, "$options": "i"}},
                     {"product_name": {"$regex": f'^{search_query}$', "$options": "i"}},
-                    # {"brand_info.name": {"$regex": search_query, "$options": "i"}},
                     {"vendor_info.name": {"$regex": search_query, "$options": "i"}},
                     {
                         "$expr": {
@@ -1898,21 +1921,18 @@ def productSearch(request):
                                             "input": { "$objectToArray": "$attributes" },
                                             "cond": {
                                                 "$or": [
-                                                    # Check if key matches the search query
                                                     {
                                                         "$and": [
                                                             { "$eq": [{ "$type": "$$this.k" }, "string"] },
                                                             { "$regexMatch": { "input": "$$this.k", "regex": search_query, "options": "i" } }
                                                         ]
                                                     },
-                                                    # Check if string values match the search query
                                                     {
                                                         "$and": [
                                                             { "$eq": [{ "$type": "$$this.v" }, "string"] },
                                                             { "$regexMatch": { "input": "$$this.v", "regex": search_query, "options": "i" } }
                                                         ]
                                                     },
-                                                    # Check if numeric values match the search query (by converting to string)
                                                     {
                                                         "$and": [
                                                             { "$in": [{ "$type": "$$this.v" }, ["int", "long", "double", "decimal"]] },
@@ -1932,7 +1952,6 @@ def productSearch(request):
                     {"short_description": {"$regex": search_query, "$options": "i"}},
                     {"features": {"$regex": search_query, "$options": "i"}},
                     {"tags": {"$regex": search_query, "$options": "i"}},
-                    
                 ]
             }
         },
@@ -1944,103 +1963,99 @@ def productSearch(request):
                 "as": "product_category_ins"
             }
         },
-         {
-                "$lookup": {
-                    "from": "wishlist",
-                    "localField": "_id",
-                    "foreignField": "product_id",
-                    "as": "wishlist_ins"
-                }
-            },
-            {
+        {
+            "$lookup": {
+                "from": "wishlist",
+                "localField": "_id",
+                "foreignField": "product_id",
+                "as": "wishlist_ins"
+            }
+        },
+        {
             "$unwind": {
-                "path": "$wishlist_ins", 
+                "path": "$wishlist_ins",
                 "preserveNullAndEmptyArrays": True
             }
-            }
-        ]
-    if product_category_id != None and product_category_id != "":
-        match = {"$match" : {
-            "product_category_ins._id" : ObjectId(product_category_id)
-        }}
+        }
+    ]
+
+    if product_category_id:
+        match = {"$match": {"product_category_ins._id": ObjectId(product_category_id)}}
         pipeline.append(match)
-    pipeline3 = [{"$unwind" : "$product_category_ins"},
+
+    pipeline3 = [
+        {"$unwind": "$product_category_ins"},
         {
             "$addFields": {
                 "end_level_category": "$product_category_ins.name"
             }
         },
         {
-                "$lookup": {
-                    "from": "brand",
-                    "localField": "brand_id",
-                    "foreignField": "_id",
-                    "as": "brand_ins"
-                }
-            },
-            {
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }
+        },
+        {
             "$unwind": {
-                "path": "$brand_ins", 
+                "path": "$brand_ins",
                 "preserveNullAndEmptyArrays": True
             }
         },
         {
             "$project": {
                 "_id": 0,
-                "id" : {"$toString" : "$_id"},
-                "name" : "$product_name",
-                "product_name" : "$product_name",
-                "logo" : {"$ifNull" : [{"$first": "$images"},"http://example.com/"]},
-                "sku_number_product_code_item_number" : "$sku_number_product_code_item_number",
-                "sku_number" : "$sku_number_product_code_item_number",
-                "mpn" : 1,
-                "msrp" : 1,
-                "was_price" :1,
-                "brand_name" : 1,
-                "visible" : 1,
-                "end_level_category" : 1,
-                "price" : "$list_price",
-                "currency" : 1,
-                "availability" : 1,
-                "quantity" : 1,
-                "discount" : {"$round" : ["$discount",2]},
-                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
+                "id": {"$toString": "$_id"},
+                "name": "$product_name",
+                "product_name": "$product_name",
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "sku_number_product_code_item_number": "$sku_number_product_code_item_number",
+                "sku_number": "$sku_number_product_code_item_number",
+                "mpn": 1,
+                "msrp": 1,
+                "was_price": 1,
+                "brand_name": 1,
+                "visible": 1,
+                "end_level_category": 1,
+                "price": "$list_price",
+                "currency": 1,
+                "availability": 1,
+                "quantity": 1,
+                "discount": {"$round": ["$discount", 2]},
+                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
                 "is_wishlist": {
-                "$cond": {
-                    "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                    "then": True,
-                    "else": False
-                }
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": True,
+                        "else": False
+                    }
                 },
                 "wishlist_id": {
                     "$cond": {
                         "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                        "then": {"$toString":"$wishlist_ins._id"}, 
+                        "then": {"$toString": "$wishlist_ins._id"},
                         "else": None
                     }
                 }
             }
-        },
-        # {"$skip": 0},
-        # {"$limit": 10}
+        }
     ]
-    if sort_by != None and sort_by != "":
-        pipeline2 = [{
-                "$sort": {
-                    sort_by: int(sort_by_value)
-                }
-            },
-            {
-                "$skip": skip-1
-            },
-            {
-                "$limit": limit
-            }]
+
+    if sort_by:
+        pipeline2 = [
+            {"$sort": {sort_by: int(sort_by_value)}},
+            {"$skip": max(skip - 1, 0)},
+            {"$limit": limit}
+        ]
         pipeline3.extend(pipeline2)
+
     pipeline.extend(pipeline3)
-    
+
     results = list(product.objects.aggregate(pipeline))
-    return results
+    return JsonResponse({"data": results, "message": "success", "status": True, "token": None})
+
 
 
 
