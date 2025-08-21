@@ -1824,18 +1824,7 @@ def save_file(request):
 
 @csrf_exempt
 def productSearch(request):
-    # ---------------- OLD CODE ----------------
-    # json_request = JSONParser().parse(request)
-    # search_query = re.escape(json_request['search_query'])
-    # manufacture_unit_id = json_request['manufacture_unit_id']
-    # role_name = json_request.get('role_name')
-    # sort_by = json_request.get("sort_by")
-    # sort_by_value = json_request.get("sort_by_value")
-    # skip = json_request.get("skip")
-    # limit = json_request.get("limit")
-    # product_category_id = request.GET.get('product_category_id')
-
-    # ---------------- NEW CODE (Support GET + POST) ----------------
+    # Handle both GET (query params) and POST (JSON body)
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
@@ -1856,27 +1845,26 @@ def productSearch(request):
         limit = json_request.get("limit", 10)
         product_category_id = json_request.get("product_category_id")
 
-    # ✅ Spell correction
-    try:
-        spell = SpellChecker()
-        search_query = ' '.join([spell.correction(word) for word in search_query.split()])
-    except:
-        pass
+    # Try to auto-correct spelling
+    search_query = search_query.strip()
+    regex_query = f"^{search_query}.*"
 
-    # ✅ Build initial match
-    match = {}
-    if manufacture_unit_id:
-        try:
-            match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-        except Exception:
-            pass
+    # ------------------------------
+    # Match logic for buyer vs seller
+    # ------------------------------
+    match = dict()
 
-    # Buyer side → requires visible=True
-    if role_name is not None:
-        match['visible'] = True
+    if role_name == "buyer":
+        match['visible'] = True   # buyers only see visible products
 
-    # ⬇️ keep the rest of your pipeline unchanged (graphLookup, lookups, match, etc.)
-    # --------------------------------------------------------------
+    if role_name == "seller":
+        if manufacture_unit_id:
+            try:
+                match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+            except Exception:
+                pass
+    # ------------------------------
+
     pipeline = [
         {"$match": match},
         {
@@ -1890,15 +1878,58 @@ def productSearch(request):
                 "depthField": "level"
             }
         },
-        # ... (your same lookups and match logic)
-    ]
-
-    if product_category_id:
-        pipeline.append({
-            "$match": {"product_category_ins._id": ObjectId(product_category_id)}
-        })
-
-    pipeline3 = [
+        {
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_info"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "vendor",
+                "localField": "vendor_id",
+                "foreignField": "_id",
+                "as": "vendor_info"
+            }
+        },
+        {
+            "$match": {
+                "$or": [
+                    {"brand_name": {"$regex": regex_query, "$options": "i"}},
+                    {"brand_info.name": {"$regex": regex_query, "$options": "i"}},
+                    {"breadcrumbs.name": {"$regex": regex_query, "$options": "i"}},
+                    {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
+                    {"mpn": {"$regex": regex_query, "$options": "i"}},
+                    {"model": {"$regex": regex_query, "$options": "i"}},
+                    {"upc_ean": {"$regex": regex_query, "$options": "i"}},
+                    {"product_name": {"$regex": regex_query, "$options": "i"}},
+                    {"vendor_info.name": {"$regex": regex_query, "$options": "i"}},
+                    {"long_description": {"$regex": regex_query, "$options": "i"}},
+                    {"short_description": {"$regex": regex_query, "$options": "i"}},
+                    {"features": {"$regex": regex_query, "$options": "i"}},
+                    {"tags": {"$regex": regex_query, "$options": "i"}},
+                ]
+            }
+        },
+        {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "product_category_ins"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "wishlist",
+                "localField": "_id",
+                "foreignField": "product_id",
+                "as": "wishlist_ins"
+            }
+        },
+        {"$unwind": {"path": "$wishlist_ins", "preserveNullAndEmptyArrays": True}},
         {"$unwind": "$product_category_ins"},
         {
             "$addFields": {"end_level_category": "$product_category_ins.name"}
@@ -1952,21 +1983,15 @@ def productSearch(request):
     ]
 
     if sort_by:
-        pipeline3.extend([
+        pipeline.extend([
             {"$sort": {sort_by: int(sort_by_value)}},
             {"$skip": max(skip - 1, 0)},
             {"$limit": limit}
         ])
 
-    pipeline.extend(pipeline3)
-
     results = list(product.objects.aggregate(pipeline))
-    return JsonResponse({
-        "data": results,
-        "message": "success",
-        "status": True,
-        "token": None
-    })
+    return JsonResponse({"data": results, "message": "success", "status": True, "token": None})
+
 
 
 
