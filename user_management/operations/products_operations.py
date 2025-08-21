@@ -1847,8 +1847,13 @@ def productSearch(request):
 
     # Try to auto-correct spelling
     search_query = search_query.strip()
-    regex_query = f"^{search_query}.*"
 
+    if not search_query:
+        # If no search term → return all products
+        regex_query = ".*"
+    else:
+        # If search term exists → match products starting with it
+        regex_query = f"^{search_query}.*"
     # ------------------------------
     # Match logic for buyer vs seller
     # ------------------------------
@@ -1858,12 +1863,38 @@ def productSearch(request):
         match['visible'] = True   # buyers only see visible products
 
     if role_name == "seller":
+        conditions = []
+
         if manufacture_unit_id:
             try:
-                match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
+                conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
             except Exception:
                 pass
-    # ------------------------------
+
+        # Always allow search by brand/mpn/etc
+        conditions.append({
+            "$or": [
+                {"brand_name": {"$regex": regex_query, "$options": "i"}},
+                {"brand_info.name": {"$regex": regex_query, "$options": "i"}},
+                {"breadcrumbs.name": {"$regex": regex_query, "$options": "i"}},
+                {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
+                {"mpn": {"$regex": regex_query, "$options": "i"}},
+                {"model": {"$regex": regex_query, "$options": "i"}},
+                {"upc_ean": {"$regex": regex_query, "$options": "i"}},
+                {"product_name": {"$regex": regex_query, "$options": "i"}},
+                {"vendor_info.name": {"$regex": regex_query, "$options": "i"}},
+                {"long_description": {"$regex": regex_query, "$options": "i"}},
+                {"short_description": {"$regex": regex_query, "$options": "i"}},
+                {"features": {"$regex": regex_query, "$options": "i"}},
+                {"tags": {"$regex": regex_query, "$options": "i"}},
+            ]
+        })
+
+        # combine into $and if both exist
+        if len(conditions) == 1:
+            match = conditions[0]
+        else:
+            match["$and"] = conditions
 
     pipeline = [
         {"$match": match},
