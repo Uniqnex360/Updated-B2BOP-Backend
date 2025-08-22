@@ -1951,6 +1951,15 @@ def productSearch(request):
             {"tags": {"$regex": regex_query, "$options": "i"}},
         ]
     })
+    
+    # ------------------------------
+    # Handle refresh / no filters
+    # ------------------------------
+    if not search_query and not product_category_id and not brand_id and not (price_from or price_to):
+        if role_name == "buyer":
+            base_conditions = [{"visible": True}]
+        elif role_name == "seller" and manufacture_unit_id:
+            base_conditions = [{"manufacture_unit_id": ObjectId(manufacture_unit_id)}]
 
     # ------------------------------
     # Build pipeline
