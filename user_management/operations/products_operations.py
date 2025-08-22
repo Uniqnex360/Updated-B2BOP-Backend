@@ -344,6 +344,7 @@ def obtainEndlevelcategoryList(request):
 #     return brand_list
 
 
+@csrf_exempt
 def obtainbrandList(request):
     # Retrieve parameters from the request
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
@@ -363,36 +364,28 @@ def obtainbrandList(request):
 
     # Build the match conditions for the lookup pipeline
     lookup_match_conditions = []
-    # Always match on brand_id using the variable from 'let'
     lookup_match_conditions.append({"$expr": {"$eq": ["$brand_id", "$$brand_id"]}})
-    # If role_name is not provided, include 'visible': True
-    if not role_name or role_name != "manufacturer_admin":
+    if role_name != "manufacturer_admin":
         lookup_match_conditions.append({"visible": True})
 
-    # Handle product_category_id
     if product_category_id:
         try:
             category_oid = ObjectId(product_category_id)
 
-            # If is_parent is True, find all end-level category IDs under the given category
             if is_parent:
                 end_level_category_ids = get_end_level_category_ids(category_oid)
                 if not end_level_category_ids:
                     return []
-                # Add a condition to match products with category_id in end_level_category_ids
                 lookup_match_conditions.append({
                     "$expr": {"$in": ["$category_id", end_level_category_ids]}
                 })
             else:
-                # Add a condition to match products with the provided category_id
                 lookup_match_conditions.append({
                     "$expr": {"$eq": ["$category_id", category_oid]}
                 })
         except Exception as e:
-            # Handle invalid ObjectId
             return []
 
-    # Combine the match conditions into a single match object
     if lookup_match_conditions:
         match_obj = {"$match": {"$and": lookup_match_conditions}}
     else:
@@ -418,8 +411,6 @@ def obtainbrandList(request):
                 }
             }
         },
-        # Filter out brands with zero products when product_category_id is provided
-        # This ensures only brands associated with the provided category are included
         {
             "$match": {
                 "$or": [
@@ -432,14 +423,21 @@ def obtainbrandList(request):
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
-                "name": 1,
-                "products_count": 1,
+                # "name": 1,   # ❌ old field projection (commented)
+                # "products_count": 1,  # kept
+                # "brand_name": 1,      # ❌ not in DB
+                # "brand_logo": 1,      # ❌ not in DB
+                "name": {"$ifNull": ["$name", ""]},
+                "logo": {"$ifNull": ["$logo", ""]},    # The brand without logo or photo or name,it won't break.   
+                "products_count": 1
             }
         },
+        {"$sort": {"name": 1}}  # ✅ added sorting by name
     ]
 
     brand_list = list(brand.objects.aggregate(*pipeline))
-    return brand_list
+    return JsonResponse({"data": brand_list, "message": "success", "status": True, "token": None})
+
 
 def get_end_level_category_ids(category_oid):
     pipeline = [
@@ -1824,7 +1822,7 @@ def save_file(request):
 
 @csrf_exempt
 def productSearch(request):
-    # Handle both GET (query params) and POST (JSON body)
+    # Handle both GET and POST
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
@@ -1834,6 +1832,9 @@ def productSearch(request):
         skip = int(request.GET.get("skip", 0))
         limit = int(request.GET.get("limit", 10))
         product_category_id = request.GET.get("product_category_id")
+        brand_id = request.GET.get("brand_id")
+        price_from = request.GET.get("price_from")
+        price_to = request.GET.get("price_to")
     else:
         json_request = JSONParser().parse(request)
         search_query = re.escape(json_request.get("search_query", "").strip())
@@ -1844,71 +1845,119 @@ def productSearch(request):
         skip = json_request.get("skip", 0)
         limit = json_request.get("limit", 10)
         product_category_id = json_request.get("product_category_id")
+        brand_id = json_request.get("brand_id")
+        price_from = json_request.get("price_from")
+        price_to = json_request.get("price_to")
 
-    # Try to auto-correct spelling
+    # ------------------------------
+    # Build filters
+    # ------------------------------
     search_query = search_query.strip()
+    regex_query = ".*" if not search_query else f".*{search_query}.*"
 
-    if not search_query:
-        # If no search term → return all products
-        regex_query = ".*"
-    else:
-        # If search term exists → match products starting with it
-        regex_query = f"^{search_query}.*"
-    # ------------------------------
-    # Match logic for buyer vs seller
-    # ------------------------------
-    match = dict()
+    base_conditions = []
 
+    # role-based
     if role_name == "buyer":
-        match['visible'] = True   # buyers only see visible products
+        base_conditions.append({"visible": True})
+    if role_name == "seller" and manufacture_unit_id:
+        try:
+            base_conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
+        except Exception:
+            pass
 
-    if role_name == "seller":
-        conditions = []
+    # brand filter
+    if brand_id:
+        try:
+            base_conditions.append({"brand_id": ObjectId(brand_id)})
+        except Exception:
+            return JsonResponse({"data": [], "message": "Invalid brand_id", "status": False, "token": None})
 
-        if manufacture_unit_id:
-            try:
-                conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
-            except Exception:
-                pass
+    # category filter (parent + direct children)
+    if product_category_id:
+        try:
+            category_obj_id = ObjectId(product_category_id)
+            category_doc = product_category.objects(id=category_obj_id).first()
+            if not category_doc:
+                return JsonResponse({
+                    "data": [],
+                    "message": "Invalid product_category_id: not found",
+                    "status": False,
+                    "token": None,
+                })
+            category_ids = [category_obj_id]
+            children = getattr(category_doc, "child_categories", []) or []
+            norm_child_ids = []
+            for c in children:
+                if isinstance(c, ObjectId):
+                    norm_child_ids.append(c)
+                elif isinstance(c, str):
+                    try:
+                        norm_child_ids.append(ObjectId(c))
+                    except Exception:
+                        pass
+                else:
+                    cid = getattr(c, "id", None) or getattr(c, "pk", None)
+                    if isinstance(cid, ObjectId):
+                        norm_child_ids.append(cid)
+                    elif isinstance(cid, str):
+                        try:
+                            norm_child_ids.append(ObjectId(cid))
+                        except Exception:
+                            pass
+            category_ids.extend(norm_child_ids)
+            base_conditions.append({"category_id": {"$in": category_ids}})
+        except Exception as e:
+            return JsonResponse({
+                "data": [],
+                "message": f"Invalid product_category_id: {str(e)}",
+                "status": False,
+                "token": None
+            })
 
-        # Always allow search by brand/mpn/etc
-        conditions.append({
-            "$or": [
-                {"brand_name": {"$regex": regex_query, "$options": "i"}},
-                {"brand_info.name": {"$regex": regex_query, "$options": "i"}},
-                {"breadcrumbs.name": {"$regex": regex_query, "$options": "i"}},
-                {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
-                {"mpn": {"$regex": regex_query, "$options": "i"}},
-                {"model": {"$regex": regex_query, "$options": "i"}},
-                {"upc_ean": {"$regex": regex_query, "$options": "i"}},
-                {"product_name": {"$regex": regex_query, "$options": "i"}},
-                {"vendor_info.name": {"$regex": regex_query, "$options": "i"}},
-                {"long_description": {"$regex": regex_query, "$options": "i"}},
-                {"short_description": {"$regex": regex_query, "$options": "i"}},
-                {"features": {"$regex": regex_query, "$options": "i"}},
-                {"tags": {"$regex": regex_query, "$options": "i"}},
-            ]
-        })
+    # ✅ price filter
+    if price_from and price_to:
+        try:
+            base_conditions.append({
+                "list_price": {
+                    "$gte": int(price_from),
+                    "$lte": int(price_to)
+                }
+            })
+        except Exception:
+            pass
+    elif price_from:  # only min price
+        try:
+            base_conditions.append({"list_price": {"$gte": int(price_from)}})
+        except Exception:
+            pass
+    elif price_to:  # only max price
+        try:
+            base_conditions.append({"list_price": {"$lte": int(price_to)}})
+        except Exception:
+            pass
 
-        # combine into $and if both exist
-        if len(conditions) == 1:
-            match = conditions[0]
-        else:
-            match["$and"] = conditions
+    # search text filter
+    base_conditions.append({
+        "$or": [
+            {"brand_name": {"$regex": regex_query, "$options": "i"}},
+            {"product_name": {"$regex": regex_query, "$options": "i"}},
+            {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
+            {"mpn": {"$regex": regex_query, "$options": "i"}},
+            {"model": {"$regex": regex_query, "$options": "i"}},
+            {"long_description": {"$regex": regex_query, "$options": "i"}},
+            {"short_description": {"$regex": regex_query, "$options": "i"}},
+            {"features": {"$regex": regex_query, "$options": "i"}},
+            {"tags": {"$regex": regex_query, "$options": "i"}},
+        ]
+    })
 
+    # ------------------------------
+    # Build pipeline
+    # ------------------------------
+    match = {"$and": base_conditions}
     pipeline = [
         {"$match": match},
-        {
-            "$graphLookup": {
-                "from": "product_category",
-                "startWith": "$category_id",
-                "connectFromField": "parent_category_id",
-                "connectToField": "_id",
-                "as": "breadcrumbs",
-                "maxDepth": 5,
-                "depthField": "level"
-            }
-        },
         {
             "$lookup": {
                 "from": "brand",
@@ -1917,108 +1966,33 @@ def productSearch(request):
                 "as": "brand_info"
             }
         },
-        {
-            "$lookup": {
-                "from": "vendor",
-                "localField": "vendor_id",
-                "foreignField": "_id",
-                "as": "vendor_info"
-            }
-        },
-        {
-            "$match": {
-                "$or": [
-                    {"brand_name": {"$regex": regex_query, "$options": "i"}},
-                    {"brand_info.name": {"$regex": regex_query, "$options": "i"}},
-                    {"breadcrumbs.name": {"$regex": regex_query, "$options": "i"}},
-                    {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
-                    {"mpn": {"$regex": regex_query, "$options": "i"}},
-                    {"model": {"$regex": regex_query, "$options": "i"}},
-                    {"upc_ean": {"$regex": regex_query, "$options": "i"}},
-                    {"product_name": {"$regex": regex_query, "$options": "i"}},
-                    {"vendor_info.name": {"$regex": regex_query, "$options": "i"}},
-                    {"long_description": {"$regex": regex_query, "$options": "i"}},
-                    {"short_description": {"$regex": regex_query, "$options": "i"}},
-                    {"features": {"$regex": regex_query, "$options": "i"}},
-                    {"tags": {"$regex": regex_query, "$options": "i"}},
-                ]
-            }
-        },
-        {
-            "$lookup": {
-                "from": "product_category",
-                "localField": "category_id",
-                "foreignField": "_id",
-                "as": "product_category_ins"
-            }
-        },
-        {
-            "$lookup": {
-                "from": "wishlist",
-                "localField": "_id",
-                "foreignField": "product_id",
-                "as": "wishlist_ins"
-            }
-        },
-        {"$unwind": {"path": "$wishlist_ins", "preserveNullAndEmptyArrays": True}},
-        {"$unwind": "$product_category_ins"},
-        {
-            "$addFields": {"end_level_category": "$product_category_ins.name"}
-        },
-        {
-            "$lookup": {
-                "from": "brand",
-                "localField": "brand_id",
-                "foreignField": "_id",
-                "as": "brand_ins"
-            }
-        },
-        {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}},
         {
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
                 "name": "$product_name",
                 "product_name": "$product_name",
-                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
-                "sku_number_product_code_item_number": "$sku_number_product_code_item_number",
-                "sku_number": "$sku_number_product_code_item_number",
-                "mpn": 1,
-                "msrp": 1,
-                "was_price": 1,
-                "brand_name": 1,
-                "visible": 1,
-                "end_level_category": 1,
                 "price": "$list_price",
+                "brand_name": "$brand_info.name",
+                "brand_logo": "$brand_info.logo",
+                "category_id": {"$toString": "$category_id"},
                 "currency": 1,
                 "availability": 1,
                 "quantity": 1,
-                "discount": {"$round": ["$discount", 2]},
-                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
-                "is_wishlist": {
-                    "$cond": {
-                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                        "then": True,
-                        "else": False
-                    }
-                },
-                "wishlist_id": {
-                    "$cond": {
-                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                        "then": {"$toString": "$wishlist_ins._id"},
-                        "else": None
-                    }
-                }
             }
         }
     ]
 
+    # sorting
     if sort_by:
-        pipeline.extend([
-            {"$sort": {sort_by: int(sort_by_value)}},
-            {"$skip": max(skip - 1, 0)},
-            {"$limit": limit}
-        ])
+        pipeline.append({"$sort": {sort_by: int(sort_by_value)}})
+    else:
+        pipeline.append({"$sort": {"id": -1}})
+    if skip:
+        pipeline.append({"$skip": max(skip - 1, 0)})
+    if limit:
+        pipeline.append({"$limit": limit})
 
     results = list(product.objects.aggregate(pipeline))
     return JsonResponse({"data": results, "message": "success", "status": True, "token": None})
