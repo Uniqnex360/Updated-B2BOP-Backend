@@ -1975,7 +1975,7 @@ def productSearch(request):
                 "product_name": "$product_name",
                 "price": "$list_price",
                 "brand_name": "$brand_info.name",
-                "brand_logo": "$brand_info.logo",
+                "logo": "$brand_info.logo",
                 "category_id": {"$toString": "$category_id"},
                 "currency": 1,
                 "availability": 1,
