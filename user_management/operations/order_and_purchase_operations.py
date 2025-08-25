@@ -1525,6 +1525,69 @@ def obtainWishlistForBuyer(request):
 
 
 @csrf_exempt
+def moveCartItemsToWishlist(request):
+    """
+    Moves a single pending cart item for a user into the wishlist.
+    Once added to the wishlist, the cart item is removed.
+    """
+    data = dict()
+    json_request = JSONParser().parse(request)
+    user_id = json_request.get("user_id")
+    product_id = json_request.get("product_id")
+
+    if not user_id or not product_id:
+        return JsonResponse({"message": "user_id and product_id are required", "status": False, "data": []})
+
+    try:
+        # Fetch the pending cart item for this user and product
+        cart_item = DatabaseModel.get_document(
+            user_cart_item.objects,
+            {"user_id": ObjectId(user_id), "product_id": ObjectId(product_id), "status": "Pending"},
+            ["id"]
+        )
+
+        if not cart_item:
+            return JsonResponse({"message": "No pending cart item found for this product", "status": True, "data": []})
+
+        # Check if the product already exists in wishlist
+        wishlist_obj = DatabaseModel.get_document(
+            wishlist.objects,
+            {"user_id": ObjectId(user_id), "product_id": ObjectId(product_id)},
+            ["id"]
+        )
+
+        if wishlist_obj is None:
+            # Add to wishlist
+            wishlist_obj = DatabaseModel.save_documents(
+                wishlist,
+                {"user_id": ObjectId(user_id), "product_id": ObjectId(product_id)}
+            )
+            message = "Cart item moved to wishlist successfully"
+        else:
+            # Update timestamp if already exists
+            DatabaseModel.update_documents(
+                wishlist.objects,
+                {"id": wishlist_obj.id},
+                {"updated_at": datetime.now()}
+            )
+            message = "Cart item already in wishlist; timestamp updated"
+
+        # Delete the cart item after moving to wishlist
+        DatabaseModel.delete_documents(user_cart_item.objects, {"id": cart_item.id})
+
+        data["message"] = message
+        data["status"] = True
+        data["data"] = []
+
+        return JsonResponse(data)
+
+    except Exception as e:
+        return JsonResponse({"message": str(e), "status": False, "data": []})
+
+
+
+
+@csrf_exempt
 def createReorder(request):
     data = dict()
     json_request = JSONParser().parse(request)

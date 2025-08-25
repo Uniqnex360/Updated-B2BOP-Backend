@@ -2010,10 +2010,6 @@ def productSearch(request):
 
 @csrf_exempt
 def productSuggestions(request):
-    """
-    Autocomplete suggestions for the search box with full product details.
-    Returns products containing the typed letters anywhere in key fields.
-    """
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
@@ -2036,11 +2032,14 @@ def productSuggestions(request):
     base_conditions = []
     if role_name == "buyer":
         base_conditions.append({"visible": True})
-    elif role_name == "seller" and manufacture_unit_id:
-        try:
-            base_conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
-        except Exception:
-            pass
+    elif role_name == "seller":
+        if manufacture_unit_id:
+            try:
+                # Try ObjectId match
+                base_conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
+            except Exception:
+                # Fallback: match as string
+                base_conditions.append({"manufacture_unit_id": manufacture_unit_id})
 
     # Search in key fields
     base_conditions.append({
@@ -2057,7 +2056,6 @@ def productSuggestions(request):
 
     pipeline = [
         {"$match": {"$and": base_conditions}},
-        # Category details
         {
             "$lookup": {
                 "from": "product_category",
@@ -2067,7 +2065,6 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
-        # Brand details
         {
             "$lookup": {
                 "from": "brand",
@@ -2077,7 +2074,6 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}},
-        # Wishlist details
         {
             "$lookup": {
                 "from": "wishlist",
@@ -2087,7 +2083,6 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$wishlist_info", "preserveNullAndEmptyArrays": True}},
-        # Project relevant fields
         {
             "$project": {
                 "_id": 0,
@@ -2105,8 +2100,20 @@ def productSuggestions(request):
                 "availability": 1,
                 "currency": 1,
                 "msrp": 1,
-                "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
-                "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
+                "is_wishlist": {
+                    "$cond": [
+                        {"$gt": [{"$type": "$wishlist_info"}, "missing"]},
+                        True,
+                        False
+                    ]
+                },
+                "wishlist_id": {
+                    "$cond": [
+                        {"$gt": [{"$type": "$wishlist_info"}, "missing"]},
+                        {"$toString": "$wishlist_info._id"},
+                        None
+                    ]
+                }
             }
         },
         {"$sort": {"product_name": 1}},

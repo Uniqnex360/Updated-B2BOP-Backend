@@ -1,5 +1,5 @@
 from django.urls import path
-from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, acceptOrRejectOrder, createWishList,deleteWishlist, obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, notifyBuyerForAvailableProductsInOrder
+from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, acceptOrRejectOrder, createWishList,deleteWishlist, obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, notifyBuyerForAvailableProductsInOrder, moveCartItemsToWishlist 
 
 
 
@@ -105,6 +105,8 @@ urlpatterns = [
     path('createWishList/',createWishList,name="createWishList"),
     path('deleteWishlist/',deleteWishlist,name="deleteWishlist"), 
     path('obtainWishlistForBuyer/',obtainWishlistForBuyer,name="obtainWishlistForBuyer"),
+    path('moveCartItemsToWishlist/', moveCartItemsToWishlist, name="moveCartItemsToWishlist"),
+
 
     #Shipping Actions
     path('getAvaliableCarrierList/',getAvaliableCarrierList,name="getAvaliableCarrierList"),
