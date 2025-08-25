@@ -2010,13 +2010,13 @@ def productSearch(request):
 def productSuggestions(request):
     """
     Autocomplete suggestions with full product details.
-    Typing 'a' → returns top products starting with 'a' along with key details.
+    Returns top products starting with the typed query, including all key fields.
     """
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
         role_name = request.GET.get("role_name")
-        limit = int(request.GET.get("limit", 10))  # default: 10 suggestions
+        limit = int(request.GET.get("limit", 10))
     else:
         json_request = JSONParser().parse(request)
         search_query = json_request.get("search_query", "").strip()
@@ -2029,6 +2029,7 @@ def productSuggestions(request):
 
     regex_query = f"^{search_query}.*"
 
+    # Base match conditions
     match_conditions = {}
     if role_name == "buyer":
         match_conditions["visible"] = True
@@ -2045,25 +2046,69 @@ def productSuggestions(request):
                 {"product_name": {"$regex": regex_query, "$options": "i"}},
                 {"brand_name": {"$regex": regex_query, "$options": "i"}},
                 {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
-                {"mpn": {"$regex": regex_query, "$options": "i"}}
+                {"mpn": {"$regex": regex_query, "$options": "i"}},
+                {"model": {"$regex": regex_query, "$options": "i"}}
             ]
         }},
-        {"$project": {
-            "_id": 0,
-            "id": {"$toString": "$_id"},
-            "product_name": 1,
-            "brand_name": 1,
-            "logo": {"$ifNull": [{"$first": "$images"}, ""]},
-            "mpn": 1,
-            "sku_number_product_code_item_number": 1,
-            "category_name": 1,
-            "price": 1,
-            "was_price": 1,
-            "discount": 1,
-            "availability": 1,
-            "currency": 1,
-            "msrp": 1
-        }},
+        # Category lookup
+        {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "category_info"
+            }
+        },
+        {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
+        # Brand lookup
+        {
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_info"
+            }
+        },
+        {"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}},
+        # Wishlist lookup
+        {
+            "$lookup": {
+                "from": "wishlist",
+                "localField": "_id",
+                "foreignField": "product_id",
+                "as": "wishlist_info"
+            }
+        },
+        {"$unwind": {"path": "$wishlist_info", "preserveNullAndEmptyArrays": True}},
+        # Project all necessary fields
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "product_name": 1,
+                "sku_number_product_code_item_number": 1,
+                "mpn": 1,
+                "model": 1,
+                "price": "$list_price",
+                "was_price": 1,
+                "msrp": 1,
+                "discount": 1,
+                "currency": 1,
+                "quantity": 1,
+                "availability": 1,
+                "long_description": 1,
+                "short_description": 1,
+                "features": 1,
+                "tags": 1,
+                "brand_name": "$brand_info.name",
+                "brand_logo": "$brand_info.logo",
+                "category_id": {"$toString": "$category_id"},
+                "category_name": "$category_info.name",
+                "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+                "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
+                "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
+            }
+        },
         {"$sort": {"product_name": 1}},
         {"$limit": limit}
     ]
