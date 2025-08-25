@@ -2011,7 +2011,8 @@ def productSearch(request):
 @csrf_exempt
 def productSuggestions(request):
     """
-    Autocomplete suggestions with full product details.
+    Autocomplete suggestions for the search box with full product details.
+    Returns products containing the typed letters anywhere in key fields.
     """
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
@@ -2028,7 +2029,8 @@ def productSuggestions(request):
     if not search_query:
         return JsonResponse({"data": [], "message": "empty query", "status": True, "token": None})
 
-    regex_query = f"^{search_query}.*"
+    # Match the search query anywhere in the field
+    regex_query = f".*{search_query}.*"
 
     # Base conditions
     base_conditions = []
@@ -2040,7 +2042,7 @@ def productSuggestions(request):
         except Exception:
             pass
 
-    # Search fields
+    # Search in key fields
     base_conditions.append({
         "$or": [
             {"product_name": {"$regex": regex_query, "$options": "i"}},
