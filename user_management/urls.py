@@ -94,7 +94,7 @@ urlpatterns = [
     path('obtainDashboardDetailsForManufactureAdmin/',obtainDashboardDetailsForManufactureAdmin,name="obtainDashboardDetailsForManufactureAdmin"),
     path('manufactureDashboardEachDealerOrderValue/',manufactureDashboardEachDealerOrderValue,name="manufactureDashboardEachDealerOrderValue"),
     path('topSellingProductsForDashBoard/',topSellingProductsForDashBoard,name='topSellingProductsForDashBoard'),
-    path('obtainEndlevelcategoryList/',obtainEndlevelcategoryList,name='obtainEndlevelcategoryList'),
+    path('obtaincategoryList/',obtainEndlevelcategoryList,name='obtainEndlevelcategoryList'),
 
     # LOGO ACTIONS
     path('updateLogo/',updateLogo,name="updateLogo"),

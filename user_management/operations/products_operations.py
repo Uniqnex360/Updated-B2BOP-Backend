@@ -1930,7 +1930,7 @@ def productSearch(request):
         {"$match": {"$and": base_conditions}},
         # Category details
         {
-            "$lookup": {
+           "$lookup": {
                 "from": "product_category",
                 "localField": "category_id",
                 "foreignField": "_id",
@@ -1969,7 +1969,7 @@ def productSearch(request):
                 "price": "$list_price",
                 "was_price": 1,
                 "msrp": 1,
-                "discount": 1,
+                "discount": {"$round": ["$discount", 2]},
                 "currency": 1,
                 "quantity": 1,
                 "availability": 1,
@@ -1980,12 +1980,14 @@ def productSearch(request):
                 "model": 1,
                 "brand_name": "$brand_info.name",
                 "brand_logo": "$brand_info.logo",
-                "category_id": {"$ifNull": [{"$toString": "$category_id"}, ""]},
-                "category_name": {"$ifNull": ["$category_info.name", ""]},
+                "end_level_category": "$category_info.name",
                 "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+                "images": 1,
+                "breadcrumbs": 1,
                 "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
                 "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
             }
+
         }
     ]
 
@@ -2010,7 +2012,6 @@ def productSearch(request):
 def productSuggestions(request):
     """
     Autocomplete suggestions with full product details.
-    Returns top products starting with the typed query, including all key fields.
     """
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
@@ -2029,28 +2030,32 @@ def productSuggestions(request):
 
     regex_query = f"^{search_query}.*"
 
-    # Base match conditions
-    match_conditions = {}
+    # Base conditions
+    base_conditions = []
     if role_name == "buyer":
-        match_conditions["visible"] = True
-    if role_name == "seller" and manufacture_unit_id:
+        base_conditions.append({"visible": True})
+    elif role_name == "seller" and manufacture_unit_id:
         try:
-            match_conditions["manufacture_unit_id"] = ObjectId(manufacture_unit_id)
+            base_conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
         except Exception:
             pass
 
+    # Search fields
+    base_conditions.append({
+        "$or": [
+            {"product_name": {"$regex": regex_query, "$options": "i"}},
+            {"brand_name": {"$regex": regex_query, "$options": "i"}},
+            {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
+            {"mpn": {"$regex": regex_query, "$options": "i"}}
+        ]
+    })
+
+    if not base_conditions:
+        base_conditions = [{}]
+
     pipeline = [
-        {"$match": match_conditions},
-        {"$match": {
-            "$or": [
-                {"product_name": {"$regex": regex_query, "$options": "i"}},
-                {"brand_name": {"$regex": regex_query, "$options": "i"}},
-                {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
-                {"mpn": {"$regex": regex_query, "$options": "i"}},
-                {"model": {"$regex": regex_query, "$options": "i"}}
-            ]
-        }},
-        # Category lookup
+        {"$match": {"$and": base_conditions}},
+        # Category details
         {
             "$lookup": {
                 "from": "product_category",
@@ -2060,7 +2065,7 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
-        # Brand lookup
+        # Brand details
         {
             "$lookup": {
                 "from": "brand",
@@ -2070,7 +2075,7 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}},
-        # Wishlist lookup
+        # Wishlist details
         {
             "$lookup": {
                 "from": "wishlist",
@@ -2080,31 +2085,24 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$wishlist_info", "preserveNullAndEmptyArrays": True}},
-        # Project all necessary fields
+        # Project relevant fields
         {
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
                 "product_name": 1,
-                "sku_number_product_code_item_number": 1,
-                "mpn": 1,
-                "model": 1,
-                "price": "$list_price",
-                "was_price": 1,
-                "msrp": 1,
-                "discount": 1,
-                "currency": 1,
-                "quantity": 1,
-                "availability": 1,
-                "long_description": 1,
-                "short_description": 1,
-                "features": 1,
-                "tags": 1,
                 "brand_name": "$brand_info.name",
                 "brand_logo": "$brand_info.logo",
-                "category_id": {"$toString": "$category_id"},
-                "category_name": "$category_info.name",
                 "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+                "mpn": 1,
+                "sku_number_product_code_item_number": 1,
+                "end_level_category": "$category_info.name",
+                "price": "$list_price",
+                "was_price": 1,
+                "discount": {"$round": ["$discount", 2]},
+                "availability": 1,
+                "currency": 1,
+                "msrp": 1,
                 "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
                 "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
             }
@@ -2115,6 +2113,7 @@ def productSuggestions(request):
 
     suggestions = list(product.objects.aggregate(pipeline))
     return JsonResponse({"data": suggestions, "message": "success", "status": True, "token": None})
+
 
 
 
