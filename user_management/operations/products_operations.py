@@ -2009,6 +2009,65 @@ def productSearch(request):
 
 
 
+@csrf_exempt
+def productSuggestions(request):
+    """
+    Lightweight product suggestions for autocomplete (does not affect productSearch).
+    Example: typing 'a' → returns top 5 products starting with 'a'
+    """
+    if request.method == "GET":
+        search_query = request.GET.get("search_query", "").strip()
+        manufacture_unit_id = request.GET.get("manufacture_unit_id")
+        role_name = request.GET.get("role_name")
+        limit = int(request.GET.get("limit", 5))  # default: 5 suggestions
+    else:
+        json_request = JSONParser().parse(request)
+        search_query = json_request.get("search_query", "").strip()
+        manufacture_unit_id = json_request.get("manufacture_unit_id")
+        role_name = json_request.get("role_name")
+        limit = int(json_request.get("limit", 5))
+
+    # If no input, return nothing
+    if not search_query:
+        return JsonResponse({"data": [], "message": "empty query", "status": True, "token": None})
+
+    # Regex: must start with the typed letters
+    regex_query = f"^{search_query}.*"
+
+    # Base filter
+    match_conditions = {}
+    if role_name == "buyer":
+        match_conditions["visible"] = True
+    if role_name == "seller" and manufacture_unit_id:
+        try:
+            match_conditions["manufacture_unit_id"] = ObjectId(manufacture_unit_id)
+        except Exception:
+            pass
+
+    # Mongo pipeline
+    pipeline = [
+        {"$match": match_conditions},
+        {"$match": {
+            "$or": [
+                {"product_name": {"$regex": regex_query, "$options": "i"}},
+                {"brand_name": {"$regex": regex_query, "$options": "i"}},
+                {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
+                {"mpn": {"$regex": regex_query, "$options": "i"}},
+            ]
+        }},
+        {"$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "product_name": 1,
+            "brand_name": 1,
+            "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+        }},
+        {"$limit": limit},
+        {"$sort": {"product_name": 1}}
+    ]
+
+    suggestions = list(product.objects.aggregate(pipeline))
+    return JsonResponse({"data": suggestions, "message": "success", "status": True, "token": None})
 
 
 def getProductsByTopLevelCategory(request):
