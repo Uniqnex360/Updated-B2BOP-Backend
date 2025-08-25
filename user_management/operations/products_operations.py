@@ -1980,8 +1980,8 @@ def productSearch(request):
                 "model": 1,
                 "brand_name": "$brand_info.name",
                 "brand_logo": "$brand_info.logo",
-                "category_id": {"$toString": "$category_id"},
-                "category_name": "$category_info.name",
+                "category_id": {"$ifNull": [{"$toString": "$category_id"}, ""]},
+                "category_name": {"$ifNull": ["$category_info.name", ""]},
                 "logo": {"$ifNull": [{"$first": "$images"}, ""]},
                 "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
                 "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
