@@ -1822,7 +1822,12 @@ def save_file(request):
 
 @csrf_exempt
 def productSearch(request):
-    # Handle both GET and POST
+    """
+    Complete product search API with filters, sorting, pagination, and wishlist status.
+    """
+    # ------------------------------
+    # Get request data
+    # ------------------------------
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
@@ -1842,131 +1847,98 @@ def productSearch(request):
         role_name = json_request.get("role_name")
         sort_by = json_request.get("sort_by")
         sort_by_value = json_request.get("sort_by_value")
-        skip = json_request.get("skip", 0)
-        limit = json_request.get("limit", 10)
+        skip = int(json_request.get("skip", 0))
+        limit = int(json_request.get("limit", 10))
         product_category_id = json_request.get("product_category_id")
         brand_id = json_request.get("brand_id")
         price_from = json_request.get("price_from")
         price_to = json_request.get("price_to")
 
-    # ------------------------------
-    # Build filters
-    # ------------------------------
-    search_query = search_query.strip()
     regex_query = ".*" if not search_query else f".*{search_query}.*"
 
+    # ------------------------------
+    # Build base conditions
+    # ------------------------------
     base_conditions = []
 
-    # role-based
+    # role-based visibility
     if role_name == "buyer":
         base_conditions.append({"visible": True})
-    if role_name == "seller" and manufacture_unit_id:
+    elif role_name == "seller" and manufacture_unit_id:
         try:
             base_conditions.append({"manufacture_unit_id": ObjectId(manufacture_unit_id)})
-        except Exception:
+        except:
             pass
 
     # brand filter
     if brand_id:
         try:
             base_conditions.append({"brand_id": ObjectId(brand_id)})
-        except Exception:
+        except:
             return JsonResponse({"data": [], "message": "Invalid brand_id", "status": False, "token": None})
 
-    # category filter (parent + direct children)
+    # category filter (including children)
     if product_category_id:
         try:
             category_obj_id = ObjectId(product_category_id)
             category_doc = product_category.objects(id=category_obj_id).first()
             if not category_doc:
-                return JsonResponse({
-                    "data": [],
-                    "message": "Invalid product_category_id: not found",
-                    "status": False,
-                    "token": None,
-                })
+                return JsonResponse({"data": [], "message": "Invalid product_category_id", "status": False, "token": None})
+            
             category_ids = [category_obj_id]
             children = getattr(category_doc, "child_categories", []) or []
-            norm_child_ids = []
             for c in children:
-                if isinstance(c, ObjectId):
-                    norm_child_ids.append(c)
-                elif isinstance(c, str):
-                    try:
-                        norm_child_ids.append(ObjectId(c))
-                    except Exception:
-                        pass
-                else:
-                    cid = getattr(c, "id", None) or getattr(c, "pk", None)
-                    if isinstance(cid, ObjectId):
-                        norm_child_ids.append(cid)
-                    elif isinstance(cid, str):
-                        try:
-                            norm_child_ids.append(ObjectId(cid))
-                        except Exception:
-                            pass
-            category_ids.extend(norm_child_ids)
+                try:
+                    category_ids.append(ObjectId(c))
+                except:
+                    continue
             base_conditions.append({"category_id": {"$in": category_ids}})
         except Exception as e:
-            return JsonResponse({
-                "data": [],
-                "message": f"Invalid product_category_id: {str(e)}",
-                "status": False,
-                "token": None
-            })
+            return JsonResponse({"data": [], "message": f"Invalid category_id: {str(e)}", "status": False, "token": None})
 
-    # ✅ price filter
+    # price filter
     if price_from and price_to:
-        try:
-            base_conditions.append({
-                "list_price": {
-                    "$gte": int(price_from),
-                    "$lte": int(price_to)
-                }
-            })
-        except Exception:
-            pass
-    elif price_from:  # only min price
-        try:
-            base_conditions.append({"list_price": {"$gte": int(price_from)}})
-        except Exception:
-            pass
-    elif price_to:  # only max price
-        try:
-            base_conditions.append({"list_price": {"$lte": int(price_to)}})
-        except Exception:
-            pass
+        base_conditions.append({"list_price": {"$gte": int(price_from), "$lte": int(price_to)}})
+    elif price_from:
+        base_conditions.append({"list_price": {"$gte": int(price_from)}})
+    elif price_to:
+        base_conditions.append({"list_price": {"$lte": int(price_to)}})
 
-    # search text filter
-    base_conditions.append({
-        "$or": [
-            {"brand_name": {"$regex": regex_query, "$options": "i"}},
-            {"product_name": {"$regex": regex_query, "$options": "i"}},
-            {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
-            {"mpn": {"$regex": regex_query, "$options": "i"}},
-            {"model": {"$regex": regex_query, "$options": "i"}},
-            {"long_description": {"$regex": regex_query, "$options": "i"}},
-            {"short_description": {"$regex": regex_query, "$options": "i"}},
-            {"features": {"$regex": regex_query, "$options": "i"}},
-            {"tags": {"$regex": regex_query, "$options": "i"}},
-        ]
-    })
-    
-    # ------------------------------
-    # Handle refresh / no filters
-    # ------------------------------
-    if not search_query and not product_category_id and not brand_id and not (price_from or price_to):
-        if role_name == "buyer":
-            base_conditions = [{"visible": True}]
-        elif role_name == "seller" and manufacture_unit_id:
-            base_conditions = [{"manufacture_unit_id": ObjectId(manufacture_unit_id)}]
+    # search query filter
+    if search_query:
+        base_conditions.append({
+            "$or": [
+                {"brand_name": {"$regex": regex_query, "$options": "i"}},
+                {"product_name": {"$regex": regex_query, "$options": "i"}},
+                {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
+                {"mpn": {"$regex": regex_query, "$options": "i"}},
+                {"model": {"$regex": regex_query, "$options": "i"}},
+                {"long_description": {"$regex": regex_query, "$options": "i"}},
+                {"short_description": {"$regex": regex_query, "$options": "i"}},
+                {"features": {"$regex": regex_query, "$options": "i"}},
+                {"tags": {"$regex": regex_query, "$options": "i"}},
+            ]
+        })
+
+    if not base_conditions:
+        base_conditions = [{}]  # no filters, return all
 
     # ------------------------------
-    # Build pipeline
+    # Build aggregation pipeline
     # ------------------------------
-    match = {"$and": base_conditions}
     pipeline = [
-        {"$match": match},
+        {"$match": {"$and": base_conditions}},
+        # Category details
+        {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "category_info"
+            }
+        },
+        {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
+        # Brand details
         {
             "$lookup": {
                 "from": "brand",
@@ -1976,29 +1948,54 @@ def productSearch(request):
             }
         },
         {"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}},
+        # Wishlist details
+        {
+            "$lookup": {
+                "from": "wishlist",
+                "localField": "_id",
+                "foreignField": "product_id",
+                "as": "wishlist_info"
+            }
+        },
+        {"$unwind": {"path": "$wishlist_info", "preserveNullAndEmptyArrays": True}},
+        # Project all required fields
         {
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
-                "name": "$product_name",
-                "product_name": "$product_name",
+                "product_name": 1,
+                "sku_number_product_code_item_number": 1,
+                "mpn": 1,
                 "price": "$list_price",
+                "was_price": 1,
+                "msrp": 1,
+                "discount": 1,
+                "currency": 1,
+                "quantity": 1,
+                "availability": 1,
+                "long_description": 1,
+                "short_description": 1,
+                "features": 1,
+                "tags": 1,
+                "model": 1,
                 "brand_name": "$brand_info.name",
-                "logo": {"$ifNull": [{"$first": "$images"}, ""]},   # product image
                 "brand_logo": "$brand_info.logo",
                 "category_id": {"$toString": "$category_id"},
-                "currency": 1,
-                "availability": 1,
-                "quantity": 1,
+                "category_name": "$category_info.name",
+                "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+                "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
+                "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
             }
         }
     ]
 
-    # sorting
+    # Sorting
     if sort_by:
         pipeline.append({"$sort": {sort_by: int(sort_by_value)}})
     else:
-        pipeline.append({"$sort": {"id": -1}})
+        pipeline.append({"$sort": {"_id": -1}})
+
+    # Pagination
     if skip:
         pipeline.append({"$skip": max(skip - 1, 0)})
     if limit:
@@ -2012,29 +2009,26 @@ def productSearch(request):
 @csrf_exempt
 def productSuggestions(request):
     """
-    Lightweight product suggestions for autocomplete (does not affect productSearch).
-    Example: typing 'a' → returns top 5 products starting with 'a'
+    Autocomplete suggestions with full product details.
+    Typing 'a' → returns top products starting with 'a' along with key details.
     """
     if request.method == "GET":
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
         role_name = request.GET.get("role_name")
-        limit = int(request.GET.get("limit", 5))  # default: 5 suggestions
+        limit = int(request.GET.get("limit", 10))  # default: 10 suggestions
     else:
         json_request = JSONParser().parse(request)
         search_query = json_request.get("search_query", "").strip()
         manufacture_unit_id = json_request.get("manufacture_unit_id")
         role_name = json_request.get("role_name")
-        limit = int(json_request.get("limit", 5))
+        limit = int(json_request.get("limit", 10))
 
-    # If no input, return nothing
     if not search_query:
         return JsonResponse({"data": [], "message": "empty query", "status": True, "token": None})
 
-    # Regex: must start with the typed letters
     regex_query = f"^{search_query}.*"
 
-    # Base filter
     match_conditions = {}
     if role_name == "buyer":
         match_conditions["visible"] = True
@@ -2044,7 +2038,6 @@ def productSuggestions(request):
         except Exception:
             pass
 
-    # Mongo pipeline
     pipeline = [
         {"$match": match_conditions},
         {"$match": {
@@ -2052,7 +2045,7 @@ def productSuggestions(request):
                 {"product_name": {"$regex": regex_query, "$options": "i"}},
                 {"brand_name": {"$regex": regex_query, "$options": "i"}},
                 {"sku_number_product_code_item_number": {"$regex": regex_query, "$options": "i"}},
-                {"mpn": {"$regex": regex_query, "$options": "i"}},
+                {"mpn": {"$regex": regex_query, "$options": "i"}}
             ]
         }},
         {"$project": {
@@ -2061,13 +2054,23 @@ def productSuggestions(request):
             "product_name": 1,
             "brand_name": 1,
             "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+            "mpn": 1,
+            "sku_number_product_code_item_number": 1,
+            "category_name": 1,
+            "price": 1,
+            "was_price": 1,
+            "discount": 1,
+            "availability": 1,
+            "currency": 1,
+            "msrp": 1
         }},
-        {"$limit": limit},
-        {"$sort": {"product_name": 1}}
+        {"$sort": {"product_name": 1}},
+        {"$limit": limit}
     ]
 
     suggestions = list(product.objects.aggregate(pipeline))
     return JsonResponse({"data": suggestions, "message": "success", "status": True, "token": None})
+
 
 
 def getProductsByTopLevelCategory(request):
