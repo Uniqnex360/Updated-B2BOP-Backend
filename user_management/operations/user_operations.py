@@ -475,19 +475,25 @@ import ast
 from django.http import JsonResponse
 def generateUserName(request):
     data = dict()
-
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     name = request.GET.get('name')
 
-    manufacture_unit_name = DatabaseModel.get_document(manufacture_unit.objects,{"id" : manufacture_unit_id},['name']).name
+    if not manufacture_unit_id or not name:
+        return JsonResponse({"error": "manufacture_unit_id and name are required"}, status=400)
 
+    manufacture_unit_doc = DatabaseModel.get_document(manufacture_unit.objects, {"id": manufacture_unit_id}, ['name'])
+    if not manufacture_unit_doc:
+        return JsonResponse({"error": "Manufacture unit not found"}, status=404)
+
+    manufacture_unit_name = manufacture_unit_doc.name
     username = getUserName(manufacture_unit_name, name)
-    user_obj = DatabaseModel.get_document(user.objects,{"username" : username})
-    while user_obj != None:
+
+    # Ensure username is unique
+    while DatabaseModel.get_document(user.objects, {"username": username}) is not None:
         username = getUserName(manufacture_unit_name, name)
-        user_obj = DatabaseModel.get_document(user.objects,{"username" : username})
 
     data['username'] = username
+    return JsonResponse(data)   
     # l =[]
     # user_list = DatabaseModel.list_documents(order.objects,{},["id","delivery_status","fulfilled_status","payment_status"])
     # for i in user_list:
@@ -567,7 +573,7 @@ def generateUserName(request):
 #         DatabaseModel.update_documents(order.objects, {"id": order_ins.id}, {"set__shipping_address_id": random_address_id})
         
 
-    return JsonResponse(data)
+   
 
 
 def send_email(to_email, subject, body):
@@ -909,7 +915,7 @@ def deleteAddress(request):
 
     if ware_house_flag:
         user.objects(id=ObjectId(user_id)).update(pull__ware_house_id_list=ObjectId(addr_id))
-        ware_house.objects(id=ObjectId(addr_id)).delete()
+        ware_house.objects(id=ObjectId(addr_id)).delete() # type: ignore
     elif is_default:
         user.objects(id=ObjectId(user_id)).update(unset__default_address_id=1)
         address.objects(id=ObjectId(addr_id)).delete()
