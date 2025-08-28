@@ -1462,64 +1462,100 @@ def deleteWishlist(request):
     return data
 
 
+
 def obtainWishlistForBuyer(request):
     user_id = request.GET.get('user_id')
+    search_query = request.GET.get('search', '').strip()
+
+    if not user_id:
+        return {"data": [], "message": "user_id is required", "status": False}
+
+    # Convert user_id to ObjectId if possible
+    try:
+        user_obj_id = ObjectId(user_id)
+    except:
+        user_obj_id = None
+
+    # Match wishlist by user_id (string or ObjectId)
+    match_stage = {
+        "$match": {
+            "$or": [
+                {"user_id": user_id},
+                {"user_id": user_obj_id} if user_obj_id else {}
+            ]
+        }
+    }
+
     pipeline = [
+        match_stage,
         {
-            "$match" : {
-                "user_id" : ObjectId(user_id)
+            "$lookup": {
+                "from": "product",
+                "let": {"pid": "$product_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$or": [
+                                    {"$eq": ["$_id", "$$pid"]},
+                                    {"$eq": [{"$toString": "$_id"}, "$$pid"]}
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "as": "product_ins"
             }
         },
-        {
-            "$lookup" :{
-                "from" : "product",
-                "localField" : "product_id",
-                "foreignField" : "_id",
-                "as" : "product_ins"
-            }
-        },
-        {"$unwind" : "$product_ins"},
-        {
-           "$project" :{
-                "_id": 0,
-                "id" : {"$toString" : "$_id"},
-                "product_id" : {"$toString" : "$product_ins._id"},
-                "name" : "$product_ins.product_name",
-                "price" : {"$ifNull" : ["$product_ins.list_price",0.0]},
-                "currency" : "$product_ins.currency",
-                "primary_image" : {"$first":"$product_ins.images"},
-                "sku_number" : "$product_ins.sku_number_product_code_item_number",
-                "mpn_number" : "$product_ins.mpn",
-                "brand_name" : "$product_ins.brand_name",
-                "availability" : "$product_ins.availability",
-                "was_price" : "$product_ins.was_price",
-                "discount" : "$product_ins.discount",
-                "msrp" : "$product_ins.msrp"
-           }
-        }
+        {"$unwind": "$product_ins"}
     ]
-    wish_list = list(wishlist.objects.aggregate(*(pipeline)))
-    for ins in wish_list:
-        cart_pipeline =[
-        {
-            "$match" : {
-                "user_id" : ObjectId(user_id),
-                "product_id" : ObjectId(ins['product_id']),
-                "status" : "Pending"
+
+    # Optional search
+    if search_query:
+        pipeline.append({
+            "$match": {
+                "$or": [
+                    {"product_ins.product_name": {"$regex": search_query, "$options": "i"}},
+                    {"product_ins.brand_name": {"$regex": search_query, "$options": "i"}}
+                ]
             }
-        },
-        {
-           "$project" :{
-                "_id":1,
-           }
+        })
+
+    # Projection
+    pipeline.append({
+        "$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "product_id": {"$toString": "$product_ins._id"},
+            "name": "$product_ins.product_name",
+            "price": {"$ifNull": ["$product_ins.list_price", 0.0]},
+            "currency": "$product_ins.currency",
+            "primary_image": {"$first": "$product_ins.images"},
+            "sku_number": "$product_ins.sku_number_product_code_item_number",
+            "mpn_number": "$product_ins.mpn",
+            "brand_name": "$product_ins.brand_name",
+            "availability": "$product_ins.availability",
+            "was_price": "$product_ins.was_price",
+            "discount": "$product_ins.discount",
+            "msrp": "$product_ins.msrp"
         }
-        ]
-        user_cart_item_obj = list(user_cart_item.objects.aggregate(*(cart_pipeline)))
-        if user_cart_item_obj != []:
-            ins['in_cart'] = True
-        else:
-            ins['in_cart'] = False
-    return wish_list
+    })
+
+    wish_list = list(wishlist.objects.aggregate(*pipeline))
+
+    # Fetch cart items
+    cart_items_cursor = user_cart_item.objects(
+        user_id=user_obj_id if user_obj_id else user_id,
+        status="Pending"
+    ).only('product_id')
+
+    cart_product_ids = set(str(item.product_id) for item in cart_items_cursor)
+
+    for item in wish_list:
+        item['in_cart'] = item['product_id'] in cart_product_ids
+
+    return {"data": wish_list, "message": "success", "status": True}
+
 
 
 
