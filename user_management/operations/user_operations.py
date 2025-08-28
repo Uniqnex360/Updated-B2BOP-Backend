@@ -903,6 +903,32 @@ def updateUserProfile(request):
 
 
 @csrf_exempt
+def deleteBuyer(request):
+    data = dict()
+    try:
+        json_request = JSONParser().parse(request)
+        buyer_id = json_request.get("buyer_id")
+
+        if not buyer_id:
+            data["error"] = "buyer_id is required"
+            return JsonResponse(data, status=400)
+
+        # Delete the buyer document
+        DatabaseModel.delete_documents(user.objects, {"id": ObjectId(buyer_id)})
+
+        data["is_deleted"] = True
+        data["message"] = "Buyer deleted successfully"
+        return JsonResponse(data, status=200)
+
+    except Exception as e:
+        data["is_deleted"] = False
+        data["error"] = str(e)
+        return JsonResponse(data, status=500)
+
+
+
+
+@csrf_exempt
 def deleteAddress(request):
     json_request = JSONParser().parse(request)
     user_id = json_request.get('user_id')
