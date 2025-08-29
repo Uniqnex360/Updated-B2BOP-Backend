@@ -14,6 +14,7 @@ from django.conf import settings
 import json
 import math
 import os
+from decimal import Decimal
 
 
 def obtainProductCategoryList(request):
@@ -1070,6 +1071,72 @@ def obtainProductsListForDealer(request):
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
+
+
+MAX_DISCOUNT = 25  # Maximum discount allowed
+
+@csrf_exempt
+def applyBuyerDiscount(request):
+    if request.method != 'POST':
+        return JsonResponse({"status": False, "error": "Only POST requests are allowed"}, status=405)
+
+    try:
+        json_request = JSONParser().parse(request)
+    except Exception:
+        return JsonResponse({"status": False, "error": "Invalid JSON"}, status=400)
+
+    buyer_ids = json_request.get('buyer_ids')
+    product_id = json_request.get('product_id')
+    quantity = json_request.get('quantity')
+
+    # Validate required fields
+    if not buyer_ids or not product_id or not quantity:
+        return JsonResponse({
+            "status": False,
+            "error": "buyer_ids, product_id, and quantity are required"
+        }, status=400)
+
+    if not isinstance(quantity, int) or quantity <= 0:
+        return JsonResponse({"status": False, "error": "Quantity must be a positive integer"}, status=400)
+
+    # Fetch product details
+    product_data = DatabaseModel.get_document(product.objects, {"id": product_id}, ["list_price", "discount"])
+    if not product_data:
+        return JsonResponse({"status": False, "error": "Product not found"}, status=404)
+
+    list_price = Decimal(product_data.list_price)
+    results = []
+
+    # Loop through each buyer
+    for buyer_id in buyer_ids:
+        buyer = DatabaseModel.get_document(user.objects, {"id": buyer_id}, ["credit_terms"])
+        if not buyer:
+            results.append({"buyer_id": buyer_id, "status": False, "error": "Buyer not found"})
+            continue
+
+        # Calculate discount based on quantity
+        discount_pct = get_quantity_discount(quantity)
+
+        # Add extra discount based on credit terms
+        if getattr(buyer, 'credit_terms', None) == "60_days":
+            discount_pct += 2
+
+        # Enforce maximum discount
+        discount_pct = min(discount_pct, MAX_DISCOUNT)
+
+        # Calculate final price
+        discounted_price = list_price * (Decimal('1') - Decimal(discount_pct) / Decimal('100'))
+
+        results.append({
+            "buyer_id": buyer_id,
+            "status": True,
+            "original_price": float(list_price),
+            "discount_percentage": float(discount_pct),
+            "final_price": float(discounted_price)
+        })
+
+    return JsonResponse({"results": results})
+
 
 @csrf_exempt
 def productCountForDealer(request):

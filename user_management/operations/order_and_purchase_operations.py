@@ -18,7 +18,12 @@ import pytz
 from tzlocal import get_localzone
 import requests
 from django.conf import settings
-
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from rest_framework.parsers import JSONParser
+from bson import ObjectId
+from user_management.models import user
+from b2bop_project.crud import DatabaseModel
 
 
 def getLocalTime(current_time):
@@ -520,6 +525,42 @@ def obtainDealerlist(request):
 
         
     return dealer_list
+
+@csrf_exempt
+def editDealerDetails(request):
+    if request.method != "PATCH":
+        return JsonResponse({"status": False, "message": "Only PATCH allowed"}, status=405)
+
+    try:
+        json_request = JSONParser().parse(request)
+        dealer_id = json_request.get("dealer_id")
+
+        if not dealer_id:
+            return JsonResponse({"status": False, "message": "dealer_id is required"}, status=400)
+
+        # Prepare fields to update
+        update_fields = {}
+
+        # Update email, mobile_number, company_name if provided
+        for field in ["email", "mobile_number", "company_name"]:
+            if field in json_request:
+                update_fields[field] = json_request[field]
+
+        # Update name safely
+        if "username" in json_request:
+            name_parts = json_request["username"].strip().split(" ", 1)
+            update_fields["first_name"] = name_parts[0]
+            update_fields["last_name"] = name_parts[1] if len(name_parts) > 1 else ""
+
+        if update_fields:
+            # Query by numeric dealer_id instead of ObjectId
+            DatabaseModel.update_documents(user.objects, {"dealer_id": int(dealer_id)}, update_fields)
+            return JsonResponse({"status": True, "message": "Dealer updated successfully"})
+        else:
+            return JsonResponse({"status": False, "message": "No valid fields to update"}, status=400)
+
+    except Exception as e:
+        return JsonResponse({"status": False, "message": str(e)}, status=500)
 
 
 @csrf_exempt

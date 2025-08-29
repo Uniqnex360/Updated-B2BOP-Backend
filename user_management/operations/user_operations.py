@@ -850,57 +850,51 @@ def createOrUpdateBank(bank_obj):
 def updateUserProfile(request):
     data = dict()
     json_request = JSONParser().parse(request)
-    user_id = json_request.get('user_id')
-    if not user_id:
-        return JsonResponse({"error": "user_id is required"}, status=400)
-
-    user_obj = json_request.get('user_obj', {})
-    address_obj_list = json_request.get('address_obj_list', [])
-    bank_details_obj_list = json_request.get('bank_details_obj_list', [])
-    ware_house_obj_list = json_request.get('ware_house_obj_list', [])
-
-    # Update top-level user fields
-    if user_obj:
-        DatabaseModel.update_documents(
-            user.objects,
-            {"id": ObjectId(user_id)},
-            {f"set__{k}": v for k, v in user_obj.items()}
-        )
-
-    # Process addresses
-    default_address_id = None
-    other_address_ids = []
-    for addr in address_obj_list:
-        addr_id = createOrUpdate(addr)
-        if addr.get('is_default'):
-            default_address_id = addr_id
-        else:
-            other_address_ids.append(addr_id)
-
-    # Process bank details
-    bank_ids = []
-    for bank in bank_details_obj_list:
-        bank_ids.append(createOrUpdateBank(bank))
-
-    # Process warehouses
-    wh_ids = []
-    for wh in ware_house_obj_list:
-        wh_ids.append(createOrUpdate(wh))
-
-    # Update user references
-    update_obj = {}
-    if default_address_id:
-        update_obj['set__default_address_id'] = ObjectId(default_address_id)
-    update_obj['set__address_id_list'] = [ObjectId(aid) for aid in other_address_ids]
-    update_obj['set__bank_details_id_list'] = [ObjectId(bid) for bid in bank_ids]
-    update_obj['set__ware_house_id_list'] = [ObjectId(wid) for wid in wh_ids]
-
-    if update_obj:
-        DatabaseModel.update_documents(user.objects, {"id": ObjectId(user_id)}, update_obj)
-
-    data['is_updated'] = "Profile Updated Successfully"
-    return JsonResponse(data)
-
+    user_id =  json_request.get('user_id')
+    user_obj = json_request['user_obj']
+    # del user_obj['age']
+    address_obj_list = json_request['address_obj_list']
+    bank_details_obj_list = json_request.get('bank_details_obj_list')
+    ware_house_obj_list = json_request.get('ware_house_obj_list')
+ 
+ 
+    DatabaseModel.update_documents(user.objects,{"id" : user_id},user_obj)
+    update_obj = dict()
+   
+ 
+    address_id_list = []
+    if address_obj_list != []:
+        for address_ins in address_obj_list:
+            if address_ins['is_default'] == True:
+                default_address_id = createOrUpdate(address_ins)
+            else:
+                other_address_id = createOrUpdate(address_ins)
+                address_id_list.append(other_address_id)
+        update_obj['default_address_id'] = default_address_id
+        update_obj['address_id_list'] = address_id_list
+ 
+ 
+    bank_id_list = []
+    if bank_details_obj_list != None and bank_details_obj_list != []:
+        for bank_ins in bank_details_obj_list:
+            bank_id_list.append(createOrUpdateBank(bank_ins))
+           
+        update_obj['bank_details_id_list'] = bank_id_list
+ 
+    ware_house_id_list = []
+    if ware_house_obj_list != None and ware_house_obj_list != []:
+        for ware_house_ins in ware_house_obj_list:
+            ware_house_id_list.append(createOrUpdate(ware_house_ins))
+           
+        update_obj['ware_house_id_list'] = ware_house_id_list
+       
+ 
+    if update_obj != {}:
+        DatabaseModel.update_documents(user.objects,{"id" : user_id},update_obj)
+    data['is_updated'] = "Profile Updated Sucessfully"
+    return data
+ 
+ 
 
 @csrf_exempt
 def deleteBuyer(request):
