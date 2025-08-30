@@ -24,7 +24,14 @@ from rest_framework.parsers import JSONParser
 from bson import ObjectId
 from user_management.models import user
 from b2bop_project.crud import DatabaseModel
-
+from bson import ObjectId
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from rest_framework.parsers import JSONParser
+from bson import ObjectId
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from rest_framework.parsers import JSONParser
 
 def getLocalTime(current_time):
     # Automatically detect the local timezone
@@ -526,6 +533,7 @@ def obtainDealerlist(request):
         
     return dealer_list
 
+
 @csrf_exempt
 def editDealerDetails(request):
     if request.method != "PATCH":
@@ -533,35 +541,46 @@ def editDealerDetails(request):
 
     try:
         json_request = JSONParser().parse(request)
-        dealer_id = json_request.get("dealer_id")
 
-        if not dealer_id:
-            return JsonResponse({"status": False, "message": "dealer_id is required"}, status=400)
+        dealer_id = json_request.get("dealer_id")
+        _id = json_request.get("_id")
+
+        if not dealer_id and not _id:
+            return JsonResponse({"status": False, "message": "Either dealer_id or _id is required"}, status=400)
 
         # Prepare fields to update
         update_fields = {}
-
-        # Update email, mobile_number, company_name if provided
         for field in ["email", "mobile_number", "company_name"]:
             if field in json_request:
                 update_fields[field] = json_request[field]
 
-        # Update name safely
         if "username" in json_request:
             name_parts = json_request["username"].strip().split(" ", 1)
             update_fields["first_name"] = name_parts[0]
             update_fields["last_name"] = name_parts[1] if len(name_parts) > 1 else ""
 
-        if update_fields:
-            # Query by numeric dealer_id instead of ObjectId
-            DatabaseModel.update_documents(user.objects, {"dealer_id": int(dealer_id)}, update_fields)
+        if not update_fields:
+            return JsonResponse({"status": False, "message": "No valid fields to update"}, status=400)
+
+        # Correct filter condition for MongoEngine
+        if _id:
+            filter_query = {"id": ObjectId(_id)}
+        else:
+            filter_query = {"dealer_id": ObjectId(dealer_id)}
+
+        # Update
+        updated = DatabaseModel.update_documents(user.objects, filter_query, update_fields)
+
+        if updated:
             return JsonResponse({"status": True, "message": "Dealer updated successfully"})
         else:
-            return JsonResponse({"status": False, "message": "No valid fields to update"}, status=400)
+            return JsonResponse({"status": False, "message": "Dealer not found"}, status=404)
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
 
+
+ 
 
 @csrf_exempt
 def createOrder(request):
