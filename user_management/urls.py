@@ -8,7 +8,7 @@ from user_management.operations.user_operations import createORUpdateManufacture
 
 from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, productSuggestions, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new, applyBuyerDiscount
 
-from user_management.operations.order_and_purchase_operations import editDealerDetails
+from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails
 
 urlpatterns = [
     path('save_xl_data_new/',save_xl_data_new,name='save_xl_data_new'),
@@ -43,6 +43,7 @@ urlpatterns = [
     path('obtainOrderList/',obtainOrderList,name="obtainOrderList"), 
     path('obtainDealerlist/',obtainDealerlist,name="obtainDealerlist"),
     path('edit-dealer-details/', editDealerDetails, name='edit_dealer_details'),
+    path('delete-dealer-details/', deleteDealerDetails, name='delete_dealer_details'),
     path('exportOrders/',exportOrders,name="exportOrders"),
     path('createOrder/',createOrder,name="createOrder"),
     path('obtainOrderListForDealer/',obtainOrderListForDealer,name="obtainOrderListForDealer"),

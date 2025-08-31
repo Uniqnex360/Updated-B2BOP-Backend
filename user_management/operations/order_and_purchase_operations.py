@@ -580,6 +580,35 @@ def editDealerDetails(request):
         return JsonResponse({"status": False, "message": str(e)}, status=500)
 
 @csrf_exempt
+def deleteDealerDetails(request):
+    if request.method != "DELETE":
+        return JsonResponse({"status": False, "message": "Only DELETE allowed"}, status=405)
+
+    try:
+        json_request = JSONParser().parse(request)
+        dealer_id = json_request.get("dealer_id")
+        _id = json_request.get("_id")
+
+        if not dealer_id and not _id:
+            return JsonResponse({"status": False, "message": "Either dealer_id or _id is required"}, status=400)
+
+        # Build filter
+        if _id:
+            filter_query = {"id": ObjectId(_id)}
+        else:
+            filter_query = {"dealer_id": int(dealer_id)}
+
+        deleted = DatabaseModel.delete_documents(user.objects, filter_query)
+
+        if deleted:
+            return JsonResponse({"status": True, "message": "Dealer deleted successfully"})
+        else:
+            return JsonResponse({"status": False, "message": "Dealer not found"}, status=404)
+
+    except Exception as e:
+        return JsonResponse({"status": False, "message": str(e)}, status=500)
+
+@csrf_exempt
 def createOrder(request):
     data = dict()
     json_request = JSONParser().parse(request)
