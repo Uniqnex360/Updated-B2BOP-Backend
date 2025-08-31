@@ -533,7 +533,6 @@ def obtainDealerlist(request):
         
     return dealer_list
 
-
 @csrf_exempt
 def editDealerDetails(request):
     if request.method != "PATCH":
@@ -566,7 +565,8 @@ def editDealerDetails(request):
         if _id:
             filter_query = {"id": ObjectId(_id)}
         else:
-            filter_query = {"dealer_id": ObjectId(dealer_id)}
+            # dealer_id is an integer, not ObjectId
+            filter_query = {"dealer_id": int(dealer_id)}
 
         # Update
         updated = DatabaseModel.update_documents(user.objects, filter_query, update_fields)
@@ -578,9 +578,6 @@ def editDealerDetails(request):
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
-
-
- 
 
 @csrf_exempt
 def createOrder(request):
