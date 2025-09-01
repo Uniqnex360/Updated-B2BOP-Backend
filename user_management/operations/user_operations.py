@@ -30,7 +30,9 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import make_password
 from bson import ObjectId
 from rest_framework.parsers import JSONParser
-
+from rest_framework.decorators import api_view
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 
 
 
@@ -1065,6 +1067,62 @@ def obtainDealerDetails(request):
     data['order_list'] = order_list
     return data
 
+@csrf_exempt
+@api_view(['GET'])
+def dealer_order_product_brand_autosuggest(request):
+    """
+    Search and autosuggest product_name and brand_name for a dealer's order history.
+    Query params:
+      - user_id (required)
+      - keyword (optional, for filtering)
+    """
+    user_id = request.GET.get('user_id')
+    keyword = request.GET.get('keyword', '').strip().lower()
+    if not user_id:
+        return JsonResponse({"error": "user_id is required"}, status=400)
+
+    # Aggregate all product_name and brand_name from the dealer's orders
+    pipeline = [
+        {"$match": {"customer_id": ObjectId(user_id)}},
+        {
+            "$lookup": {
+                "from": "user_cart_item",
+                "localField": "order_items",
+                "foreignField": "_id",
+                "as": "cart_ins"
+            }
+        },
+        {"$unwind": "$cart_ins"},
+        {
+            "$lookup": {
+                "from": "product",
+                "localField": "cart_ins.product_id",
+                "foreignField": "_id",
+                "as": "products_ins"
+            }
+        },
+        {"$unwind": "$products_ins"},
+        {
+            "$group": {
+                "_id": None,
+                "product_names": {"$addToSet": "$products_ins.product_name"},
+                "brand_names": {"$addToSet": "$products_ins.brand_name"},
+            }
+        }
+    ]
+    result = list(order.objects.aggregate(pipeline))
+    suggestions = {"product_names": [], "brand_names": []}
+    if result:
+        product_names = result[0].get("product_names", [])
+        brand_names = result[0].get("brand_names", [])
+        # Filter by keyword if provided
+        if keyword:
+            product_names = [p for p in product_names if keyword in (p or '').lower()]
+            brand_names = [b for b in brand_names if keyword in (b or '').lower()]
+        suggestions["product_names"] = sorted(set(product_names))
+        suggestions["brand_names"] = sorted(set(brand_names))
+
+    return JsonResponse(suggestions)
 
 def obtainDashboardDetailsForManufactureAdmin(request):
     data = dict()
