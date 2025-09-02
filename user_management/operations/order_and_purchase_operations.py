@@ -190,10 +190,7 @@ def obtainOrderList(request):
     sort_by = json_request['sort_by']
     start_date_str = json_request.get('start_date')
     end_date_str = json_request.get('end_date')
-    
-    
     sort_by_value = json_request['sort_by_value']
-    # status = json_request['status']
     dealer_list = json_request.get('dealer_list')
     delivery_status = json_request['delivery_status']
     fulfilled_status = json_request['fulfilled_status']
@@ -201,7 +198,6 @@ def obtainOrderList(request):
     industry_id_str = json_request.get('industry_id')
     is_reorder = json_request.get('is_reorder')
 
-    
     status_match = {}
     status_match['manufacture_unit_id_str'] = manufacture_unit_id
     if delivery_status != "all":
@@ -210,137 +206,138 @@ def obtainOrderList(request):
         status_match['fulfilled_status'] = fulfilled_status
     if payment_status != "all":
         status_match['payment_status'] = payment_status
-    if industry_id_str != None:
+    if industry_id_str is not None:
         status_match['industry_id_str'] = industry_id_str
-    if is_reorder != None and is_reorder != "" and is_reorder != "all":
+    if is_reorder is not None and is_reorder != "" and is_reorder != "all":
         is_reorder = is_reorder.lower()
         if is_reorder == "yes":
             status_match['is_reorder'] = True
         elif is_reorder == "no":
             status_match['is_reorder'] = False
 
-
-    # print("status_match",status_match,"\n\n\n\n")
-   
     pipeline = [
         {
-            "$match" : status_match
+            "$match": status_match
         },
         {
-            "$lookup" :{
-                "from" : "user",
-                "localField" : "customer_id",
-                "foreignField" : "_id",
-                "as" : "user_ins"
+            "$lookup": {
+                "from": "user",
+                "localField": "customer_id",
+                "foreignField": "_id",
+                "as": "user_ins"
             }
         },
-        {"$unwind" : "$user_ins"}]
-    
-    if dealer_list != None and dealer_list != []:
+        {"$unwind": "$user_ins"}
+    ]
+
+    if dealer_list is not None and dealer_list != []:
         dealer_list = [ObjectId(ins) for ins in dealer_list]
         dealer_search_obj = {
-            "$match" : {
+            "$match": {
                 "user_ins._id": {"$in": dealer_list}
             }
         }
         pipeline.append(dealer_search_obj)
 
-    if start_date_str != None and start_date_str != "":
+    if start_date_str is not None and start_date_str != "":
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-
-        # Get the system's local timezone dynamically
         local_timezone = datetime.now().astimezone().tzinfo
 
-        # Localize start and end of the day to the local timezone
         start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
-        if end_date_str != None and end_date_str != "":
+        if end_date_str is not None and end_date_str != "":
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
             end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
         else:
             end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
 
-        # Convert to UTC for MongoDB query
         start_of_day_utc = start_of_day.astimezone(pytz.utc)
         end_of_day_utc = end_of_day.astimezone(pytz.utc)
         date_search_obj = {
-            "$match" : {
-                "creation_date":  {
-                                "$gte": start_of_day_utc,
-                                "$lte": end_of_day_utc 
-                                 }
+            "$match": {
+                "creation_date": {
+                    "$gte": start_of_day_utc,
+                    "$lte": end_of_day_utc
+                }
             }
         }
         pipeline.append(date_search_obj)
-    project_obj =[
+
+    project_obj = [
         {
-            "$lookup" :{
-                "from" : "address",
-                "localField" : "shipping_address_id",
-                "foreignField" : "_id",
-                "as" : "address_ins"
+            "$lookup": {
+                "from": "address",
+                "localField": "shipping_address_id",
+                "foreignField": "_id",
+                "as": "address_ins"
             }
         },
         {
-        "$unwind": {
-            "path": "$address_ins",
-            "preserveNullAndEmptyArrays": True
-        }
+            "$unwind": {
+                "path": "$address_ins",
+                "preserveNullAndEmptyArrays": True
+            }
         },
         {
-           "$project" :{
-                "_id": 0,
-                "_id" : {"$toString" : "$_id"},
-                "order_id" : 1,
-                "dealer_name" : {
+            "$project": {
+                "_id": {"$toString": "$_id"},
+                "order_id": 1,
+                "dealer_name": {
                     "$concat": [
                         "$user_ins.first_name",
-                        { 
-                        "$cond": {
-                            "if": { "$ne": ["$user_ins.last_name", None] },  
-                            "then": " ",                             
-                            "else": ""                               
-                        }
+                        {
+                            "$cond": {
+                                "if": {"$ne": ["$user_ins.last_name", None]},
+                                "then": " ",
+                                "else": ""
+                            }
                         },
-                        { "$ifNull": ["$user_ins.last_name", ""] }        
-                        ]
+                        {"$ifNull": ["$user_ins.last_name", ""]}
+                    ]
                 },
-                "total_items" : 1,
-                "amount" : 1,
-                "currency" : 1,
-                "shipping_service" : "-",
-                "tracking_code" : "-",
+                "total_items": 1,
+                "amount": 1,
+                "currency": 1,
+                "shipping_service": "-",
+                "tracking_code": "-",
                 "creation_date": {
                     "$dateToString": {
                         "format": "%Y-%m-%dT%H:%M:%S.%LZ",
                         "date": "$creation_date",
                     }
-                    },
-                "address" : {
-                    "street" : "$address_ins.street",
-                    "city" : "$address_ins.city",
-                    "state" : "$address_ins.state",
-                    "country" : "$address_ins.country",
-                    "zipCode" : "$address_ins.zipCode"
                 },
-                "delivery_status" : 1,
-                "fulfilled_status" : 1,
-                "payment_status" : 1,
-                "is_reorder" : 1
-           }
-        }]
+                "address": {
+                    "street": "$address_ins.street",
+                    "city": "$address_ins.city",
+                    "state": "$address_ins.state",
+                    "country": "$address_ins.country",
+                    "zipCode": "$address_ins.zipCode"
+                },
+                "delivery_status": 1,
+                "fulfilled_status": 1,
+                "payment_status": 1,
+                "is_reorder": 1
+            }
+        }
+    ]
     pipeline.extend(project_obj)
+
+    # 🔍 Updated search filter
     if search_query != "":
         search_obj = {
-            "$match" : { "$or" : [
-                                {"dealer_name": {"$regex": search_query, "$options": "i"}},
-                                {"order_id" : {"$regex": search_query, "$options": "i"}}
-                                ]
+            "$match": {
+                "$or": [
+                    {"dealer_name": {"$regex": search_query, "$options": "i"}},
+                    {"order_id": {"$regex": search_query, "$options": "i"}},
+                    {"address.city": {"$regex": search_query, "$options": "i"}},
+                    {"address.country": {"$regex": search_query, "$options": "i"}},
+                    {"delivery_status": {"$regex": search_query, "$options": "i"}},
+                    {"payment_status": {"$regex": search_query, "$options": "i"}}
+                ]
             }
         }
         pipeline.append(search_obj)
 
     if sort_by != "":
-        
         pipeline2 = {
             "$sort": {
                 sort_by: sort_by_value
@@ -349,14 +346,13 @@ def obtainOrderList(request):
         pipeline.append(pipeline2)
     else:
         pipeline2 = {
-                "$sort": {
-                    "_id": -1
-                }
+            "$sort": {
+                "_id": -1
             }
+        }
         pipeline.append(pipeline2)
 
-    order_list = list(order.objects.aggregate(*(pipeline)))
-    # print("order_list",len(order_list))
+    order_list = list(order.objects.aggregate(*pipeline))
     return order_list
 
 

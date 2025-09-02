@@ -1,6 +1,12 @@
 from django.urls import path
-from user_management.operations.order_and_purchase_operations import createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList, totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails, createOrder,obtainOrderListForDealer, getManufactureBankDetails, conformPayment, getorderDetails, acceptOrRejectOrder, createWishList,deleteWishlist, obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, notifyBuyerForAvailableProductsInOrder, moveCartItemsToWishlist 
-
+from user_management.operations.order_and_purchase_operations import (
+    createOrUpdateUserCartItem, updateOrDeleteUserCartItem, obtainUserCartItemList,
+    totalCheckOutAmount, obtainOrderList, obtainDealerlist, exportOrders, obtainUserDetails,
+    createOrder, obtainOrderListForDealer, getManufactureBankDetails, conformPayment, 
+    getorderDetails, acceptOrRejectOrder, createWishList, deleteWishlist, 
+    obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, 
+    notifyBuyerForAvailableProductsInOrder, moveCartItemsToWishlist # 🚨 This is the problem
+)
 
 
 from user_management.operations.user_operations import createORUpdateManufactureUnit, dealer_order_product_brand_autosuggest, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, deleteBuyer, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry, forgotPassword, changePassword, topSellingProductsForDashBoard, updateLogo, getManufactureUnitLogo
