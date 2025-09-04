@@ -15,6 +15,7 @@ import json
 import math
 import os
 from decimal import Decimal
+from bson import ObjectId
 
 
 def obtainProductCategoryList(request):
@@ -493,7 +494,7 @@ def get_end_level_category_ids(category_oid):
         else:
             return []
 
-
+#seller side 
 @csrf_exempt
 def obtainProductsList(request):
     json_request = JSONParser().parse(request)
@@ -778,6 +779,126 @@ def obtainProductsList(request):
 
     return product_list
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.parsers import JSONParser
+from bson import ObjectId  # important for checking/converting ObjectId
+
+@csrf_exempt
+def obtainProductsListAutoSuggestion(request):
+    """
+    Auto-suggestion API for products based on product_name and end_level_category.
+    Returns all fields of matching products.
+    """
+
+    # helper to recursively convert ObjectId → str
+    def convert_objectids(doc):
+        if isinstance(doc, list):
+            return [convert_objectids(item) for item in doc]
+        elif isinstance(doc, dict):
+            new_doc = {}
+            for k, v in doc.items():
+                if isinstance(v, ObjectId):
+                    new_doc[k] = str(v)
+                else:
+                    new_doc[k] = convert_objectids(v)
+            return new_doc
+        else:
+            return doc
+
+    try:
+        # Parse the JSON request
+        json_request = JSONParser().parse(request)
+        product_name = json_request.get('product_name', '').strip()
+        end_level_category = json_request.get('end_level_category', '').strip()
+
+        # Build match conditions
+        match_conditions = {}
+
+        # If end_level_category is provided, lookup category_id(s) with that name
+        category_ids = []
+        if end_level_category:
+            category_pipeline = [
+                {"$match": {"name": {"$regex": f"^{end_level_category}$", "$options": "i"}}},
+                {"$project": {"_id": 1}}
+            ]
+            category_objs = list(product_category.objects.aggregate(category_pipeline))
+            category_ids = [cat['_id'] for cat in category_objs]
+            if category_ids:
+                match_conditions['category_id'] = {"$in": category_ids}
+            else:
+                return JsonResponse({"data": [], "message": "No matching category", "status": True, "token": None})
+
+        # If product_name is provided, use regex for partial match (case-insensitive)
+        if product_name:
+            match_conditions['product_name'] = {"$regex": product_name, "$options": "i"}
+
+        # Define the aggregation pipeline
+        pipeline = [
+            {"$match": match_conditions},
+            {
+                "$lookup": {
+                    "from": "product_category",
+                    "localField": "category_id",
+                    "foreignField": "_id",
+                    "as": "category_info"
+                }
+            },
+            {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
+        ]
+
+        # Sorting logic
+        if product_name:
+            pipeline.append({
+                "$addFields": {
+                    "match_score": {
+                        "$switch": {
+                            "branches": [
+                                {
+                                    "case": {"$eq": [{"$toLower": "$product_name"}, product_name.lower()]},
+                                    "then": 3
+                                },
+                                {
+                                    "case": {"$eq": [{"$indexOfCP": [{"$toLower": "$product_name"}, product_name.lower()]}, 0]},
+                                    "then": 2
+                                },
+                                {
+                                    "case": {"$gte": [{"$indexOfCP": [{"$toLower": "$product_name"}, product_name.lower()]}, 0]},
+                                    "then": 1
+                                }
+                            ],
+                            "default": 0
+                        }
+                    }
+                }
+            })
+            pipeline.append({"$sort": {"match_score": -1, "product_name": 1}})
+        else:
+            pipeline.append({"$sort": {"product_name": 1}})
+
+        # Project the required fields
+        pipeline.append({
+            "$project": {
+                "_id": 0,
+                **{field: 1 for field in product._fields if field != 'id'},
+                "id": {"$toString": "$_id"},
+                "category_id": {"$toString": "$category_id"},
+                "manufacture_unit_id": {"$toString": "$manufacture_unit_id"},
+                "end_level_category": "$category_info.name"
+            }
+        })
+
+        # Execute the pipeline and fetch results
+        results = list(product.objects.aggregate(pipeline))
+
+        # Recursively convert any remaining ObjectIds to string
+        results = [convert_objectids(r) for r in results]
+
+        return JsonResponse({"data": results, "message": "success", "status": True, "token": None})
+
+    except Exception as e:
+        print(f"Error in obtainProductsListAutoSuggestion: {str(e)}")
+        return JsonResponse({"data": [], "message": "An error occurred", "status": False, "token": None})
 
 @csrf_exempt
 def obtainProductsListForDealer(request):
