@@ -15,7 +15,9 @@ import json
 import math
 import os
 from decimal import Decimal
-from bson import ObjectId
+
+
+
 
 
 def obtainProductCategoryList(request):
@@ -1192,6 +1194,93 @@ def obtainProductsListForDealer(request):
         product_list = list(product_category.objects.aggregate(pipeline))
 
     return product_list
+
+@csrf_exempt
+def obtainProductsListAutoSuggestionForDealer(request):
+    """
+    Auto-suggestion API for dealer-side products.
+    Filters by manufacture_unit_id + optional category, brand, price range.
+    """
+    try:
+        json_request = JSONParser().parse(request)
+        manufacture_unit_id = json_request.get('manufacture_unit_id')
+        search_name = json_request.get('search_name', '').strip()
+        product_category_id = json_request.get('product_category_id', '').strip()
+        brand_id_list = json_request.get('brand_id_list', [])
+        price_from = json_request.get('price_from')
+        price_to = json_request.get('price_to')
+
+        if not manufacture_unit_id:
+            return JsonResponse({"data": [], "message": "manufacture_unit_id required", "status": False})
+
+        match = {
+            "manufacture_unit_id": ObjectId(manufacture_unit_id),
+            "visible": True
+        }
+
+        if product_category_id:
+            match['category_id'] = ObjectId(product_category_id)
+
+        if search_name:
+            match['product_name'] = {"$regex": search_name, "$options": "i"}
+
+        pipeline = [{"$match": match}]
+
+        # Brand filter
+        if brand_id_list:
+            brand_ids = [ObjectId(x) for x in brand_id_list]
+            pipeline.append({"$match": {"brand_id": {"$in": brand_ids}}})
+
+        # Price filter
+        if price_from and price_to:
+            price_to_val = int(price_to) + 1
+            pipeline.append({"$match": {
+                "list_price": {"$gte": int(price_from), "$lte": price_to_val}
+            }})
+
+        # Join with category for name
+        pipeline.append({
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "category_info"
+            }
+        })
+        pipeline.append({"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}})
+
+        # Join with brand for logo
+        pipeline.append({
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_info"
+            }
+        })
+        pipeline.append({"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}})
+
+        # Return only lightweight fields for suggestion
+        pipeline.append({
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": "$product_name",
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "category_name": "$category_info.name",
+                "brand_name": "$brand_info.name",
+                "brand_logo": "$brand_info.logo"
+            }
+        })
+
+        # Optionally sort by name ascending
+        pipeline.append({"$sort": {"name": 1}})
+
+        results = list(product.objects.aggregate(pipeline))
+        return JsonResponse({"data": results, "message": "success", "status": True})
+    except Exception as e:
+        print("Error in dealer auto suggestion:", str(e))
+        return JsonResponse({"data": [], "message": "An error occurred", "status": False})
 
 
 MAX_DISCOUNT = 25  # Maximum discount allowed

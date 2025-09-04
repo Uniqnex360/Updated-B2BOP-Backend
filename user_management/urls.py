@@ -11,7 +11,7 @@ from user_management.operations.order_and_purchase_operations import (
 
 from user_management.operations.user_operations import createORUpdateManufactureUnit, dealer_order_product_brand_autosuggest, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, deleteBuyer, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry, forgotPassword, changePassword, topSellingProductsForDashBoard, updateLogo, getManufactureUnitLogo
 
-from user_management.operations.products_operations import obtainProductsListAutoSuggestion
+from user_management.operations.products_operations import obtainProductsListAutoSuggestion,obtainProductsListAutoSuggestionForDealer
 from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new, applyBuyerDiscount
 
 from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails
@@ -99,6 +99,11 @@ urlpatterns = [
 
     #Dealer actions
     path('obtainProductsListForDealer/',obtainProductsListForDealer,name="obtainProductsListForDealer"),
+    path(
+    'obtainProductsListAutoSuggestionForDealer/',
+    obtainProductsListAutoSuggestionForDealer,
+    name="obtainProductsListAutoSuggestionForDealer"
+),
     path('obtainDealerDetails/',obtainDealerDetails,name="obtainDealerDetails"), 
      path('dealer-order-product-brand-autosuggest/', dealer_order_product_brand_autosuggest, name='dealer_order_product_brand_autosuggest'),
     
