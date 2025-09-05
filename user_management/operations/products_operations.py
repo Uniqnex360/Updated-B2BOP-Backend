@@ -1925,274 +1925,177 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id,industry_id_str
 
     return product_category_id
 
+
 @csrf_exempt
-
 def save_file(request):
-
     data = dict()
-
     json_request = JSONParser().parse(request)
-
     manufacture_unit_id = json_request['manufacture_unit_id']
-
-    industry_id_str = json_request.get('industry_id')  # ✅ optional now
-
+    industry_id_str = json_request.get('industry_id', '')  # <-- optional
     xl_data = json_request['xl_data']
-
     duplicate_products = list()
-
     allow_duplicate = json_request.get('allow_duplicate')
- 
+    
+    
     for i in xl_data:
+        
+        level1_obj = None
+        level2_obj = None
+        level3_obj = None
+        level4_obj = None
+        level5_obj = None
+        level6_obj = None
 
-        level1_obj = level2_obj = level3_obj = None
-
-        level4_obj = level5_obj = level6_obj = None
- 
-        # ---------- CATEGORY MAPPING ----------
-
-        for key, value in i['category_obj'].items():
-
+        for key,value in i['category_obj'].items():
             if key == "level 1":
-
-                level1_obj = saveProductCategory(manufacture_unit_id, value, 1, None, industry_id_str)
-
+                level1_obj = saveProductCategory(manufacture_unit_id,value,1,None,industry_id_str)
             elif key == "level 2" and value != "nan":
-
-                level2_obj = saveProductCategory(manufacture_unit_id, value, 2, level1_obj, industry_id_str)
-
+                level2_obj = saveProductCategory(manufacture_unit_id,value,2,level1_obj,industry_id_str)
             elif key == "level 3" and value != "nan":
-
-                level3_obj = saveProductCategory(manufacture_unit_id, value, 3, level2_obj, industry_id_str)
-
+                level3_obj = saveProductCategory(manufacture_unit_id,value,3,level2_obj,industry_id_str)
             elif key == "level 4" and value != "nan":
-
-                level4_obj = saveProductCategory(manufacture_unit_id, value, 4, level3_obj, industry_id_str)
-
+                level4_obj = saveProductCategory(manufacture_unit_id,value,4,level3_obj,industry_id_str)
             elif key == "level 5" and value != "nan":
-
-                level5_obj = saveProductCategory(manufacture_unit_id, value, 5, level4_obj, industry_id_str)
-
+                level5_obj = saveProductCategory(manufacture_unit_id,value,5,level4_obj,industry_id_str)
             elif key == "level 6" and value != "nan":
+                level6_obj = saveProductCategory(manufacture_unit_id,value,6,level5_obj,industry_id_str)
 
-                level6_obj = saveProductCategory(manufacture_unit_id, value, 6, level5_obj, industry_id_str)
- 
-        category_id = (
+        if level6_obj != None:
+            category_id = level6_obj
+        elif level5_obj != None:
+            category_id = level5_obj
+        elif level4_obj != None:
+            category_id = level4_obj
+        elif level3_obj != None:
+            category_id = level3_obj
+        elif level2_obj != None:
+            category_id = level2_obj
+        elif level1_obj != None:
+            category_id = level1_obj
 
-            level6_obj or level5_obj or level4_obj or
 
-            level3_obj or level2_obj or level1_obj
+        DatabaseModel.update_documents(product_category.objects,{"id" : category_id},{"end_level" : True})
 
-        )
- 
-        if category_id:
-
-            DatabaseModel.update_documents(
-
-                product_category.objects, {"id": category_id}, {"end_level": True}
-
-            )
- 
-        # ---------- BRAND MAPPING ----------
-
-        brand_match = {
-
-            "name": i['brand_obj']['name'],
-
-            "manufacture_unit_id_str": manufacture_unit_id,
-
-        }
-
-        if industry_id_str:
-
-            brand_match["industry_id_str"] = industry_id_str
- 
+        # Brand Mapping
         pipeline = [
-
-            {"$match": brand_match},
-
-            {"$project": {"_id": 1}},
-
-            {"$limit": 1},
-
+        {"$match": {"name": i['brand_obj']['name'],
+                    "manufacture_unit_id_str" : manufacture_unit_id,
+                    "industry_id_str" : industry_id_str
+                    }},  
+        {
+            "$project": {
+                "_id": 1
+            }
+            },
+            {
+                "$limit" :1
+            }
+        
         ]
-
         brand_obj = list(brand.objects.aggregate(*pipeline))
-
-        if brand_obj:
-
+        if brand_obj != []:
             brand_id = brand_obj[0]['_id']
 
-        else:
-
-            brand_data = {
-
-                "name": i['brand_obj']['name'],
-
-                "manufacture_unit_id_str": manufacture_unit_id,
-
-            }
-
-            if industry_id_str:
-
-                brand_data["industry_id_str"] = industry_id_str
- 
-            brand_obj = DatabaseModel.save_documents(brand, brand_data)
-
+        if brand_obj == []:
+            brand_obj = DatabaseModel.save_documents(
+                brand, {
+                    "name": i['brand_obj']['name'],
+                    "manufacture_unit_id_str" : manufacture_unit_id,
+                    "industry_id_str" : industry_id_str
+                }
+            )
             brand_id = brand_obj.id
- 
-        # ---------- VENDOR MAPPING ----------
 
+        # Vendor Mapping
         vendor_id = None
-
         if i['vendor_obj'].get('name'):
-
             pipeline = [
-
-                {"$match": {
-
-                    "name": i['vendor_obj']['name'],
-
-                    "manufacture_unit_id_str": manufacture_unit_id
-
-                }},
-
-                {"$project": {"_id": 1}},
-
-                {"$limit": 1},
-
+            {"$match": {"name": i['vendor_obj']['name'],
+                        "manufacture_unit_id_str" : manufacture_unit_id}},  
+            {
+                "$project": {
+                    "_id": 1
+                }
+                },
+                {
+                    "$limit" :1
+                }
+            
             ]
-
             vendor_obj = list(vendor.objects.aggregate(*pipeline))
-
-            if vendor_obj:
-
+            if vendor_obj != []:
                 vendor_id = vendor_obj[0]['_id']
 
-            else:
-
+            if vendor_obj == []:
                 vendor_obj = DatabaseModel.save_documents(
-
                     vendor, {
-
                         "name": i['vendor_obj']['name'],
-
-                        "manufacture_unit_id_str": manufacture_unit_id,
-
+                        "manufacture_unit_id_str" : manufacture_unit_id
                     }
-
                 )
-
                 vendor_id = vendor_obj.id
- 
-        # ---------- PRODUCT MAPPING ----------
 
-        product_match = {
-
-            "product_name": i['product_obj']['product_name'],
-
-            "manufacture_unit_id": ObjectId(manufacture_unit_id),
-
-        }
-
-        if industry_id_str:
-
-            product_match["industry_id_str"] = industry_id_str
- 
+        # Product Mapping
         pipeline = [
-
-            {"$match": product_match},
-
-            {"$project": {"_id": 1}},
-
-            {"$limit": 1},
-
-        ]
-
+            {"$match": {"product_name": i['product_obj']['product_name'],
+                        "manufacture_unit_id" : ObjectId(manufacture_unit_id),
+                        "industry_id_str" : industry_id_str
+                        }},  
+            {
+            "$project": {
+                "_id": 1
+            }
+            },
+            {
+                "$limit" :1
+            }
+            
+            ]
         products_obj = list(product.objects.aggregate(*pipeline))
- 
-        if products_obj:
-
+        if products_obj != []:
             products_id = products_obj[0]['_id']
- 
+        
         try:
-
             del i['product_obj']['quantity_price']
-
-        except KeyError:
-
+        except:
             pass
- 
-        if not products_obj:
-
+        if products_obj == []:
+            
             i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-
             i['product_obj']['brand_id'] = brand_id
-
-            if vendor_id is not None:
-
-                i['product_obj']['vendor_id'] = vendor_id
-
+            if vendor_id != None:
+                i['product_obj']['vendor_id'] = vendor_id 
             i['product_obj']['category_id'] = category_id
+            i['product_obj']['industry_id_str'] = industry_id_str
 
-            if industry_id_str:
-
-                i['product_obj']['industry_id_str'] = industry_id_str
- 
-            # sanitize keys
-
+            # Ensure no keys contain '.'
             def sanitize_keys(d):
-
                 if isinstance(d, dict):
-
                     return {k.replace('.', '_'): sanitize_keys(v) for k, v in d.items()}
-
                 elif isinstance(d, list):
-
                     return [sanitize_keys(i) for i in d]
+                else:
+                    return d
 
-                return d
- 
             i['product_obj'] = sanitize_keys(i['product_obj'])
-
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
-
         else:
-
-            if allow_duplicate:
-
+            if allow_duplicate != None and allow_duplicate == True:
                 i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-
                 i['product_obj']['brand_id'] = brand_id
-
-                if vendor_id is not None:
-
-                    i['product_obj']['vendor_id'] = vendor_id
-
+                if vendor_id != None:
+                    i['product_obj']['vendor_id'] = vendor_id 
                 i['product_obj']['category_id'] = category_id
-
-                if industry_id_str:
-
-                    i['product_obj']['industry_id_str'] = industry_id_str
-
-                DatabaseModel.update_documents(
-
-                    product.objects, {"id": products_id}, i['product_obj']
-
-                )
-
+                i['product_obj']['industry_id_str'] = industry_id_str
+                DatabaseModel.update_documents(product.objects,{"id" : products_id},i['product_obj'])
             else:
-
                 duplicate_products.append(i)
- 
+    
     data['status'] = True
-
     data['duplicate_products'] = duplicate_products
-
-    data['industry_id'] = industry_id_str  # can be None
-
+    data['industry_id'] = industry_id_str
     return data
- 
+
 
 
 @csrf_exempt
