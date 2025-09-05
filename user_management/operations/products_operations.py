@@ -1925,27 +1925,25 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id,industry_id_str
 
     return product_category_id
 
-
 @csrf_exempt
 def save_file(request):
     data = dict()
     json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request['manufacture_unit_id']
-    industry_id_str = json_request.get('industry_id', '')  # <-- optional
+    industry_id_str = json_request['industry_id']
     xl_data = json_request['xl_data']
     duplicate_products = list()
     allow_duplicate = json_request.get('allow_duplicate')
-    
-    
+   
     for i in xl_data:
-        
+       
         level1_obj = None
         level2_obj = None
         level3_obj = None
         level4_obj = None
         level5_obj = None
         level6_obj = None
-
+ 
         for key,value in i['category_obj'].items():
             if key == "level 1":
                 level1_obj = saveProductCategory(manufacture_unit_id,value,1,None,industry_id_str)
@@ -1959,7 +1957,7 @@ def save_file(request):
                 level5_obj = saveProductCategory(manufacture_unit_id,value,5,level4_obj,industry_id_str)
             elif key == "level 6" and value != "nan":
                 level6_obj = saveProductCategory(manufacture_unit_id,value,6,level5_obj,industry_id_str)
-
+ 
         if level6_obj != None:
             category_id = level6_obj
         elif level5_obj != None:
@@ -1972,10 +1970,10 @@ def save_file(request):
             category_id = level2_obj
         elif level1_obj != None:
             category_id = level1_obj
-
-
+ 
+ 
         DatabaseModel.update_documents(product_category.objects,{"id" : category_id},{"end_level" : True})
-
+ 
         # Brand Mapping
         pipeline = [
         {"$match": {"name": i['brand_obj']['name'],
@@ -1990,12 +1988,12 @@ def save_file(request):
             {
                 "$limit" :1
             }
-        
+       
         ]
         brand_obj = list(brand.objects.aggregate(*pipeline))
         if brand_obj != []:
             brand_id = brand_obj[0]['_id']
-
+ 
         if brand_obj == []:
             brand_obj = DatabaseModel.save_documents(
                 brand, {
@@ -2005,7 +2003,7 @@ def save_file(request):
                 }
             )
             brand_id = brand_obj.id
-
+ 
         # Vendor Mapping
         vendor_id = None
         if i['vendor_obj'].get('name'):
@@ -2020,12 +2018,12 @@ def save_file(request):
                 {
                     "$limit" :1
                 }
-            
+           
             ]
             vendor_obj = list(vendor.objects.aggregate(*pipeline))
             if vendor_obj != []:
                 vendor_id = vendor_obj[0]['_id']
-
+ 
             if vendor_obj == []:
                 vendor_obj = DatabaseModel.save_documents(
                     vendor, {
@@ -2034,8 +2032,7 @@ def save_file(request):
                     }
                 )
                 vendor_id = vendor_obj.id
-
-        # Product Mapping
+ 
         # Product Mapping
         pipeline = [
             {"$match": {"product_name": i['product_obj']['product_name'],
@@ -2050,41 +2047,25 @@ def save_file(request):
             {
                 "$limit" :1
             }
-            
+           
             ]
         products_obj = list(product.objects.aggregate(*pipeline))
         if products_obj != []:
             products_id = products_obj[0]['_id']
-        
+       
         try:
             del i['product_obj']['quantity_price']
         except:
             pass
-
-        # Add industry_name from Excel row if present
-        industry_name_excel = None
-        if 'Industry' in i['product_obj']:
-            industry_name_excel = i['product_obj']['Industry']
-        elif 'industry' in i['product_obj']:
-            industry_name_excel = i['product_obj']['industry']
-        if industry_name_excel:
-            i['product_obj']['industry_name'] = industry_name_excel
-        else:
-            # fallback to DB lookup if needed
-            if industry_id_str:
-                industry_obj = DatabaseModel.get_document(industry.objects, {"id": industry_id_str}, ['name'])
-                i['product_obj']['industry_name'] = industry_obj.name if industry_obj else "N/A"
-            else:
-                i['product_obj']['industry_name'] = "N/A"
-
         if products_obj == []:
+           
             i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
             i['product_obj']['brand_id'] = brand_id
             if vendor_id != None:
-                i['product_obj']['vendor_id'] = vendor_id 
+                i['product_obj']['vendor_id'] = vendor_id
             i['product_obj']['category_id'] = category_id
             i['product_obj']['industry_id_str'] = industry_id_str
-
+ 
             # Ensure no keys contain '.'
             def sanitize_keys(d):
                 if isinstance(d, dict):
@@ -2093,7 +2074,7 @@ def save_file(request):
                     return [sanitize_keys(i) for i in d]
                 else:
                     return d
-
+ 
             i['product_obj'] = sanitize_keys(i['product_obj'])
             products_obj = DatabaseModel.save_documents(product, i['product_obj'])
         else:
@@ -2101,19 +2082,17 @@ def save_file(request):
                 i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
                 i['product_obj']['brand_id'] = brand_id
                 if vendor_id != None:
-                    i['product_obj']['vendor_id'] = vendor_id 
+                    i['product_obj']['vendor_id'] = vendor_id
                 i['product_obj']['category_id'] = category_id
                 i['product_obj']['industry_id_str'] = industry_id_str
                 DatabaseModel.update_documents(product.objects,{"id" : products_id},i['product_obj'])
             else:
                 duplicate_products.append(i)
-    
+   
     data['status'] = True
     data['duplicate_products'] = duplicate_products
     data['industry_id'] = industry_id_str
     return data
-
-
 
 @csrf_exempt
 def productSearch(request):
