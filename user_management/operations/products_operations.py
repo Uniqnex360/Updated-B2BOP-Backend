@@ -2036,6 +2036,7 @@ def save_file(request):
                 vendor_id = vendor_obj.id
 
         # Product Mapping
+        # Product Mapping
         pipeline = [
             {"$match": {"product_name": i['product_obj']['product_name'],
                         "manufacture_unit_id" : ObjectId(manufacture_unit_id),
@@ -2059,8 +2060,24 @@ def save_file(request):
             del i['product_obj']['quantity_price']
         except:
             pass
+
+        # Add industry_name from Excel row if present
+        industry_name_excel = None
+        if 'Industry' in i['product_obj']:
+            industry_name_excel = i['product_obj']['Industry']
+        elif 'industry' in i['product_obj']:
+            industry_name_excel = i['product_obj']['industry']
+        if industry_name_excel:
+            i['product_obj']['industry_name'] = industry_name_excel
+        else:
+            # fallback to DB lookup if needed
+            if industry_id_str:
+                industry_obj = DatabaseModel.get_document(industry.objects, {"id": industry_id_str}, ['name'])
+                i['product_obj']['industry_name'] = industry_obj.name if industry_obj else "N/A"
+            else:
+                i['product_obj']['industry_name'] = "N/A"
+
         if products_obj == []:
-            
             i['product_obj']['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
             i['product_obj']['brand_id'] = brand_id
             if vendor_id != None:
