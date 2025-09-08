@@ -1947,8 +1947,11 @@ def save_file(request):
     allow_duplicate = json_request.get('allow_duplicate')
    
     for i in xl_data:
-        industry_name = i.get('Industry')
-        industry_id_str=get_industry_id_by_name(industry_name)
+        print(i.get('Industry')) 
+        industry_name = i.get('Industry', '').strip() or "General"
+        industry_id_str = str(get_industry_id_by_name(industry_name))
+
+        print(f"Product: {i['product_obj']['product_name']}, Industry Name: {industry_name}, Industry ID: {industry_id_str}")
         level1_obj = None
         level2_obj = None
         level3_obj = None
