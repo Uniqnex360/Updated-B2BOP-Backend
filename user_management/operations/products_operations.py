@@ -1925,18 +1925,30 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id,industry_id_str
 
     return product_category_id
 
+def get_industry_id_by_name(industry_name):
+    if not industry_name:
+        return None
+
+    existing = industry.objects(name=industry_name).first()
+    if existing:
+        return existing.id
+    new_industry = industry(name=industry_name)
+    new_industry.save()
+    return new_industry.id
+
 @csrf_exempt
 def save_file(request):
     data = dict()
     json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request['manufacture_unit_id']
-    industry_id_str = json_request['industry_id']
+    # industry_id_str = json_request['industry_id']
     xl_data = json_request['xl_data']
     duplicate_products = list()
     allow_duplicate = json_request.get('allow_duplicate')
    
     for i in xl_data:
-       
+        industry_name = i.get('Industry')
+        industry_id_str=get_industry_id_by_name(industry_name)
         level1_obj = None
         level2_obj = None
         level3_obj = None
