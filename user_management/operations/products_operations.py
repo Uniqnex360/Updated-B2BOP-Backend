@@ -15,10 +15,7 @@ import json
 import math
 import os
 from decimal import Decimal
-
-
-
-
+from django.views.decorators.csrf import csrf_exempt
 
 def obtainProductCategoryList(request):
     # Retrieve parameters from the request
@@ -348,6 +345,63 @@ def obtainEndlevelcategoryList(request):
 #     return brand_list
 
 
+@csrf_exempt
+def getIndustryCategoryBrand(request):
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST method allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        manufacture_unit_id = data.get("manufacture_unit_id")
+        keyword = data.get("keyword", "").strip().lower()  # get search keyword
+
+        # Fetch industries
+        industries_query = industry.objects()
+        if keyword:
+            industries_query = [obj for obj in industries_query if keyword in obj.name.lower()]
+        industries = [{"id": str(obj.id), "name": obj.name} for obj in industries_query]
+
+        # Fetch end-level categories
+        categories_query = product_category.objects(end_level=True)
+        if manufacture_unit_id:
+            categories_query = categories_query.filter(manufacture_unit_id_str=manufacture_unit_id)
+        if keyword:
+            categories_query = [obj for obj in categories_query if keyword in obj.name.lower()]
+        categories = [{"id": str(obj.id), "name": obj.name} for obj in categories_query]
+
+        # Fetch brands
+        brands_query = brand.objects()
+        if manufacture_unit_id:
+            brands_query = brands_query.filter(manufacture_unit_id_str=manufacture_unit_id)
+        if keyword:
+            brands_query = [obj for obj in brands_query if keyword in obj.name.lower()]
+        brands = [{"id": str(obj.id), "name": obj.name} for obj in brands_query]
+
+        # Fetch all dealers (users with role dealer_admin)
+        role_obj = role.objects(name="dealer_admin").first()
+        dealers_query = user.objects(role_id=role_obj.id)
+        if manufacture_unit_id:
+            dealers_query = dealers_query.filter(manufacture_unit_id=manufacture_unit_id)
+        if keyword:
+            dealers_query = [
+                u for u in dealers_query
+                if keyword in f"{u.first_name} {u.last_name or ''}".lower()
+            ]
+        dealers = [{
+            "id": str(u.id),
+            "name": f"{u.first_name} {u.last_name or ''}".strip()
+        } for u in dealers_query]
+
+        return JsonResponse({
+            "status": True,
+            "industries": industries,
+            "end_level_categories": categories,
+            "brands": brands,
+            "dealers": dealers
+        }, status=200)
+
+    except Exception as e:
+        return JsonResponse({"status": False, "error": str(e)}, status=400)
 @csrf_exempt
 def obtainbrandList(request):
     # Retrieve parameters from the request
