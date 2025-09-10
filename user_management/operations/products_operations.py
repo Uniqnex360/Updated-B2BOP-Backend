@@ -402,6 +402,189 @@ def getIndustryCategoryBrand(request):
 
     except Exception as e:
         return JsonResponse({"status": False, "error": str(e)}, status=400)
+
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from datetime import datetime
+import json
+
+@csrf_exempt
+def seller_dashboard_view(request):
+    """
+    API endpoint to return all seller dashboard KPIs.
+    Accepts POST with JSON body {"manufacture_unit_id": "...", "keyword": "..."}
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+        manufacture_unit_id = data.get("manufacture_unit_id")
+        keyword = data.get("keyword", "").strip().lower()
+
+        if not manufacture_unit_id:
+            return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
+
+        kpis = {}
+
+        # ------------------- KPI 1: Total Revenue -------------------
+        revenue_pipeline = [
+            {"$match": {
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
+            }},
+            {"$lookup": {
+                "from": "user",
+                "localField": "customer_id",
+                "foreignField": "_id",
+                "as": "user_info"
+            }},
+            {"$unwind": "$user_info"},
+            {"$project": {
+                "_id": 0,
+                "order_id": 1,
+                "amount": 1,
+                "payment_status": 1,
+                "buyer_name": {
+                    "$concat": [
+                        "$user_info.first_name",
+                        {"$cond": {"if": {"$ne": ["$user_info.last_name", None]}, "then": " ", "else": ""}},
+                        {"$ifNull": ["$user_info.last_name", ""]}
+                    ]
+                }
+            }}
+        ]
+
+        relevant_orders = list(order.objects.aggregate(*revenue_pipeline))
+        total_revenue = sum(o["amount"] for o in relevant_orders) if relevant_orders else 0
+        kpis["total_revenue"] = round(total_revenue, 2)
+        kpis["order_details"] = [
+            {
+                "order_id": o["order_id"],
+                "amount": o["amount"],
+                "payment_status": o["payment_status"],
+                "buyer_name": o["buyer_name"]
+            } for o in relevant_orders
+        ]
+
+        # ------------------- KPI 2: Total Orders -------------------
+        orders_pipeline = [
+            {"$match": {"manufacture_unit_id_str": manufacture_unit_id}},
+            {"$lookup": {
+                "from": "user",
+                "localField": "customer_id",
+                "foreignField": "_id",
+                "as": "user_info"
+            }},
+            {"$unwind": "$user_info"},
+            {"$project": {
+                "_id": 0,
+                "order_id": 1,
+                "buyer_name": {
+                    "$concat": [
+                        "$user_info.first_name",
+                        {"$cond": {"if": {"$ne": ["$user_info.last_name", None]}, "then": " ", "else": ""}},
+                        {"$ifNull": ["$user_info.last_name", ""]}
+                    ]
+                }
+            }}
+        ]
+
+        all_orders = list(order.objects.aggregate(*orders_pipeline))
+        kpis["total_orders"] = len(all_orders)
+        kpis["all_order_details"] = [
+            {"order_id": o["order_id"], "buyer_name": o["buyer_name"]} for o in all_orders
+        ]
+
+        # ------------------- KPI 3: Total Active Buyers -------------------
+        role_obj = role.objects(name="dealer_admin").first()
+        dealers_query = user.objects(role_id=role_obj.id)
+
+        if manufacture_unit_id:
+            dealers_query = dealers_query.filter(manufacture_unit_id=manufacture_unit_id)
+
+        if keyword:
+            dealers_query = [
+                u for u in dealers_query
+                if keyword in f"{u.first_name} {u.last_name or ''}".lower()
+            ]
+
+        total_active_buyers_list = [
+            {
+                "id": str(u.id),
+                "name": f"{u.first_name} {u.last_name or ''}".strip(),
+                "email": u.email
+            } for u in dealers_query
+        ]
+
+        # wrap count and list in one object for clarity
+        kpis["active_buyers_info"] = {
+            "count": len(total_active_buyers_list),
+            "buyers": total_active_buyers_list
+        }
+
+        # ------------------- KPI 4: Completed Orders -------------------
+        completed_pipeline = [
+            {"$match": {
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "delivery_status": "Completed"
+            }},
+            {"$count": "completed_orders"}
+        ]
+        completed_result = list(order.objects.aggregate(*completed_pipeline))
+        kpis["completed_orders"] = completed_result[0]["completed_orders"] if completed_result else 0
+
+        # ------------------- KPI 5: Cancelled Orders -------------------
+        cancelled_pipeline = [
+            {"$match": {
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "delivery_status": "Canceled"
+            }},
+            {"$count": "cancelled_orders"}
+        ]
+        cancelled_result = list(order.objects.aggregate(*cancelled_pipeline))
+        kpis["cancelled_orders"] = cancelled_result[0]["cancelled_orders"] if cancelled_result else 0
+
+        # ------------------- KPI 6: Average Order Value -------------------
+        avg_pipeline = [
+            {"$match": {
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
+            }},
+            {"$group": {"_id": None, "avg_amount": {"$avg": "$amount"}}},
+            {"$project": {"_id": 0, "avg_amount": 1}}
+        ]
+        avg_result = list(order.objects.aggregate(*avg_pipeline))
+        kpis["average_order_value"] = round(avg_result[0]["avg_amount"], 2) if avg_result else 0
+
+        # ------------------- KPI 7: Total Customers -------------------
+        customers_pipeline = [
+            {"$match": {"manufacture_unit_id_str": manufacture_unit_id}},
+            {"$group": {"_id": "$customer_id"}},
+            {"$count": "total_customers"}
+        ]
+        customers_result = list(order.objects.aggregate(*customers_pipeline))
+        kpis["total_customers"] = customers_result[0]["total_customers"] if customers_result else 0
+
+        # ------------------- KPI 8: Orders This Month -------------------
+        now = datetime.utcnow()
+        month_start = datetime(now.year, now.month, 1)
+        this_month_pipeline = [
+            {"$match": {
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "order_date": {"$gte": month_start}
+            }},
+            {"$count": "orders_this_month"}
+        ]
+        month_result = list(order.objects.aggregate(*this_month_pipeline))
+        kpis["orders_this_month"] = month_result[0]["orders_this_month"] if month_result else 0
+
+        return JsonResponse({"status": True, "kpis": kpis})
+
+    except Exception as e:
+        return JsonResponse({"status": False, "message": str(e)}, status=500)
+
 @csrf_exempt
 def obtainbrandList(request):
     # Retrieve parameters from the request

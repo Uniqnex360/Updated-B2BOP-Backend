@@ -5,7 +5,7 @@ from user_management.operations.order_and_purchase_operations import (
     createOrder, obtainOrderListForDealer, getManufactureBankDetails, conformPayment, 
     getorderDetails, acceptOrRejectOrder, createWishList, deleteWishlist, 
     obtainWishlistForBuyer, getAvaliableCarrierList, createReorder, 
-    notifyBuyerForAvailableProductsInOrder, moveCartItemsToWishlist # 🚨 This is the problem
+    notifyBuyerForAvailableProductsInOrder,  # 🚨 This is the problem
 )
 
 
@@ -13,8 +13,8 @@ from user_management.operations.user_operations import createORUpdateManufacture
 
 from user_management.operations.products_operations import obtainProductsListAutoSuggestion,obtainProductsListAutoSuggestionForDealer
 from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new, applyBuyerDiscount
-from user_management.operations.products_operations import getIndustryCategoryBrand
-from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails
+from user_management.operations.products_operations import getIndustryCategoryBrand,seller_dashboard_view
+from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails,moveCartItemsToWishlist
 
 urlpatterns = [
     path('save_xl_data_new/',save_xl_data_new,name='save_xl_data_new'),
@@ -36,6 +36,8 @@ urlpatterns = [
 
 #santhosh dashboard selller
  path('getIndustryCategoryBrand/', getIndustryCategoryBrand, name='getIndustryCategoryBrand'),
+ 
+path('seller_dashboard_kpis/', seller_dashboard_view, name='seller_dashboard_kpis'),
 
 
     #Manufacture Unit creation
