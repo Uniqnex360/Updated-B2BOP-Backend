@@ -404,10 +404,10 @@ def getIndustryCategoryBrand(request):
         return JsonResponse({"status": False, "error": str(e)}, status=400)
 
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from datetime import datetime
-import json
+
+
+
+
 
 @csrf_exempt
 def seller_dashboard_view(request):
@@ -518,13 +518,24 @@ def seller_dashboard_view(request):
             } for u in dealers_query
         ]
 
-        # wrap count and list in one object for clarity
         kpis["active_buyers_info"] = {
             "count": len(total_active_buyers_list),
             "buyers": total_active_buyers_list
         }
 
-        # ------------------- KPI 4: Completed Orders -------------------
+        # ------------------- KPI 4: Average Order Value -------------------
+        if kpis["total_orders"] > 0:
+            kpis["average_order_value"] = round(kpis["total_revenue"] / kpis["total_orders"], 2)
+        else:
+            kpis["average_order_value"] = 0
+
+        # also include raw values used for AOV
+        kpis["aov_details"] = {
+            "total_revenue_used_for_aov": kpis["total_revenue"],
+            "total_orders_used_for_aov": kpis["total_orders"]
+        }
+
+        # ------------------- KPI 5: Completed Orders -------------------
         completed_pipeline = [
             {"$match": {
                 "manufacture_unit_id_str": manufacture_unit_id,
@@ -535,7 +546,7 @@ def seller_dashboard_view(request):
         completed_result = list(order.objects.aggregate(*completed_pipeline))
         kpis["completed_orders"] = completed_result[0]["completed_orders"] if completed_result else 0
 
-        # ------------------- KPI 5: Cancelled Orders -------------------
+        # ------------------- KPI 6: Cancelled Orders -------------------
         cancelled_pipeline = [
             {"$match": {
                 "manufacture_unit_id_str": manufacture_unit_id,
@@ -545,18 +556,6 @@ def seller_dashboard_view(request):
         ]
         cancelled_result = list(order.objects.aggregate(*cancelled_pipeline))
         kpis["cancelled_orders"] = cancelled_result[0]["cancelled_orders"] if cancelled_result else 0
-
-        # ------------------- KPI 6: Average Order Value -------------------
-        avg_pipeline = [
-            {"$match": {
-                "manufacture_unit_id_str": manufacture_unit_id,
-                "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
-            }},
-            {"$group": {"_id": None, "avg_amount": {"$avg": "$amount"}}},
-            {"$project": {"_id": 0, "avg_amount": 1}}
-        ]
-        avg_result = list(order.objects.aggregate(*avg_pipeline))
-        kpis["average_order_value"] = round(avg_result[0]["avg_amount"], 2) if avg_result else 0
 
         # ------------------- KPI 7: Total Customers -------------------
         customers_pipeline = [
