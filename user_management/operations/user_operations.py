@@ -978,7 +978,7 @@ def updateMailTemplate(request):
     data["is_updated"] = "Mail Template update sucessfully"
     return data
 
-
+#obtainDealerDetails
 def obtainDealerDetails(request):
     data = dict()
     user_id = request.GET.get('user_id')
