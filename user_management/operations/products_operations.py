@@ -16,6 +16,7 @@ import math
 import os
 from decimal import Decimal
 from django.views.decorators.csrf import csrf_exempt
+from mongoengine.queryset.visitor import Q
 
 def obtainProductCategoryList(request):
     # Retrieve parameters from the request
@@ -430,7 +431,15 @@ def getIndustryCategoryBrand(request):
 def seller_dashboard_view(request):
     """
     API endpoint to return all seller dashboard KPIs.
-    Accepts POST with JSON body {"manufacture_unit_id": "...", "keyword": "..."}
+    Accepts POST with JSON body:
+    {
+        "manufacture_unit_id": "...",
+        "keyword": "...",              # optional, filter buyer names
+        "industry_ids": ["..."],       # optional
+        "brand_ids": ["..."],          # optional
+        "category_ids": ["..."],       # optional
+        "dealer_ids": ["..."]          # optional
+    }
     """
     if request.method != "POST":
         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
@@ -438,7 +447,7 @@ def seller_dashboard_view(request):
     try:
         data = json.loads(request.body.decode("utf-8"))
         manufacture_unit_id = data.get("manufacture_unit_id")
-        keyword = data.get("keyword", "").strip().lower()
+        keyword = data.get("keyword", "").strip()
 
         if not manufacture_unit_id:
             return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
@@ -449,14 +458,27 @@ def seller_dashboard_view(request):
         except Exception:
             manufacture_unit_id_obj = manufacture_unit_id
 
-        kpis = {}
+        # ------------------- Build filters for orders -------------------
+        order_filter = {
+            "manufacture_unit_id_str": manufacture_unit_id,
+            "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
+        }
 
-        # ------------------- KPI 1: Total Revenue -------------------
+        if data.get("industry_ids"):
+            order_filter["industry_id_str"] = {"$in": data["industry_ids"]}
+
+        if data.get("brand_ids"):
+            order_filter["brand_id_str"] = {"$in": data["brand_ids"]}
+
+        if data.get("category_ids"):
+            order_filter["category_id"] = {"$in": data["category_ids"]}
+
+        if data.get("dealer_ids"):
+            order_filter["customer_id"] = {"$in": [ObjectId(d) for d in data["dealer_ids"]]}
+
+        # ------------------- KPI 1: Total Revenue + Order Details -------------------
         revenue_pipeline = [
-            {"$match": {
-                "manufacture_unit_id_str": manufacture_unit_id,
-                "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
-            }},
+            {"$match": order_filter},
             {"$lookup": {
                 "from": "user",
                 "localField": "customer_id",
@@ -480,7 +502,16 @@ def seller_dashboard_view(request):
         ]
 
         relevant_orders = list(order.objects.aggregate(*revenue_pipeline))
+
+        # optional keyword filter on buyer_name at Python side
+        if keyword:
+            relevant_orders = [
+                o for o in relevant_orders if keyword.lower() in o["buyer_name"].lower()
+            ]
+
         total_revenue = sum(o["amount"] for o in relevant_orders) if relevant_orders else 0
+
+        kpis = {}
         kpis["total_revenue"] = round(total_revenue, 2)
         kpis["order_details"] = [
             {
@@ -515,6 +546,9 @@ def seller_dashboard_view(request):
         ]
 
         all_orders = list(order.objects.aggregate(*orders_pipeline))
+        if keyword:
+            all_orders = [o for o in all_orders if keyword.lower() in o["buyer_name"].lower()]
+
         kpis["total_orders"] = len(all_orders)
         kpis["all_order_details"] = [
             {"order_id": o["order_id"], "buyer_name": o["buyer_name"]} for o in all_orders
@@ -522,10 +556,7 @@ def seller_dashboard_view(request):
 
         # ------------------- KPI 3: Total Active Buyers -------------------
         role_obj = role.objects(name="dealer_admin").first()
-        dealers_query = user.objects(role_id=role_obj.id)
-
-        if manufacture_unit_id:
-            dealers_query = dealers_query.filter(manufacture_unit_id=manufacture_unit_id_obj)
+        dealers_query = user.objects(role_id=role_obj.id, manufacture_unit_id=manufacture_unit_id_obj)
 
         if keyword:
             regex_pattern = f".*{re.escape(keyword)}.*"
@@ -536,7 +567,7 @@ def seller_dashboard_view(request):
                 ]
             })
 
-        dealers_query = dealers_query.only("first_name", "last_name", "email")  # Reduce memory usage
+        dealers_query = dealers_query.only("first_name", "last_name", "email")
 
         total_active_buyers_list = [
             {
@@ -610,10 +641,11 @@ def seller_dashboard_view(request):
         category_result = list(product.objects.aggregate(*category_pipeline))
         kpis["number_of_end_level_categories"] = category_result[0]["num_end_level_categories"] if category_result else 0
 
-        return JsonResponse({"status": True, "kpis": kpis})
+        return JsonResponse({"status": True, "kpis": kpis}, status=200)
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
+
 @csrf_exempt
 def obtainbrandList(request):
     # Retrieve parameters from the request
