@@ -427,54 +427,37 @@ def getIndustryCategoryBrand(request):
     except Exception as e:
         return JsonResponse({"status": False, "error": str(e)}, status=400)
 
-
-
 @csrf_exempt
 def seller_dashboard_view(request):
+    """
+    API endpoint to return all seller dashboard KPIs.
+    Accepts POST with JSON body {"manufacture_unit_id": "...", "keyword": "..."}
+    """
     if request.method != "POST":
         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
 
     try:
         data = json.loads(request.body.decode("utf-8"))
         manufacture_unit_id = data.get("manufacture_unit_id")
+        keyword = data.get("keyword", "").strip().lower()
+
         if not manufacture_unit_id:
             return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
 
-        keyword = data.get("keyword", "").strip().lower()
-        industry_ids = data.get("industry_ids", [])
-        brand_ids = data.get("brand_ids", [])
-        category_ids = data.get("category_ids", [])
-        dealer_ids = data.get("dealer_ids", [])
-
+        # Convert manufacture_unit_id to ObjectId if possible
         try:
             manufacture_unit_id_obj = ObjectId(manufacture_unit_id)
         except Exception:
             manufacture_unit_id_obj = manufacture_unit_id
 
-        # base filters for products/orders
-        product_filter = {"manufacture_unit_id": manufacture_unit_id_obj}
-        order_filter = {"manufacture_unit_id_str": manufacture_unit_id}
-
-        if industry_ids:
-            product_filter["industry_id_str"] = {"$in": industry_ids}
-            order_filter["industry_id_str"] = {"$in": industry_ids}
-
-        if brand_ids:
-            product_filter["brand_name"] = {"$in": brand_ids}
-            order_filter["brand_name"] = {"$in": brand_ids}
-
-        if category_ids:
-            product_filter["category_id"] = {"$in": category_ids}
-            order_filter["category_id"] = {"$in": category_ids}
-
-        if dealer_ids:
-            order_filter["customer_id"] = {"$in": [ObjectId(d) for d in dealer_ids]}
-
         kpis = {}
 
-        # KPI 1: Total Revenue + Order Details
+        # ------------------- KPI 1: Total Revenue -------------------
         revenue_pipeline = [
-            {"$match": order_filter},
+            {"$match": {
+                "manufacture_unit_id_str": manufacture_unit_id,
+                "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
+            }},
             {"$lookup": {
                 "from": "user",
                 "localField": "customer_id",
@@ -490,82 +473,60 @@ def seller_dashboard_view(request):
                 "buyer_name": {
                     "$concat": [
                         "$user_info.first_name",
-                        {"$cond": {
-                            "if": {"$ne": ["$user_info.last_name", None]},
-                            "then": " ",
-                            "else": ""
-                        }},
+                        {"$cond": {"if": {"$ne": ["$user_info.last_name", None]}, "then": " ", "else": ""}},
                         {"$ifNull": ["$user_info.last_name", ""]}
                     ]
                 }
             }}
         ]
+
         relevant_orders = list(order.objects.aggregate(*revenue_pipeline))
-        if keyword:
-            relevant_orders = [o for o in relevant_orders if keyword in o["buyer_name"].lower()]
         total_revenue = sum(o["amount"] for o in relevant_orders) if relevant_orders else 0
         kpis["total_revenue"] = round(total_revenue, 2)
-        kpis["order_details"] = relevant_orders
-
-        # KPI 2: Total Orders
-        kpis["total_orders"] = len(relevant_orders)
-
-        # KPI 3: Average Order Value
-        kpis["average_order_value"] = round(total_revenue / kpis["total_orders"], 2) if kpis["total_orders"] else 0
-        kpis["aov_details"] = {
-            "total_revenue_used_for_aov": kpis["total_revenue"],
-            "total_orders_used_for_aov": kpis["total_orders"]
-        }
-
-        # KPI 4: Number of SKUs
-        sku_pipeline = [
-            {"$match": product_filter},
-            {"$group": {"_id": "$sku_number_product_code_item_number"}},
-            {"$count": "num_skus"}
+        kpis["order_details"] = [
+            {
+                "order_id": o["order_id"],
+                "amount": o["amount"],
+                "payment_status": o["payment_status"],
+                "buyer_name": o["buyer_name"]
+            } for o in relevant_orders
         ]
-        sku_result = list(product.objects.aggregate(*sku_pipeline))
-        kpis["number_of_skus"] = sku_result[0]["num_skus"] if sku_result else 0
 
-        # KPI 5: Number of Industries (with names)
-        industry_pipeline = [
-            {"$match": product_filter},
-            {"$group": {"_id": "$industry_id_str"}}
+        # ------------------- KPI 2: Total Orders -------------------
+        orders_pipeline = [
+            {"$match": {"manufacture_unit_id_str": manufacture_unit_id}},
+            {"$lookup": {
+                "from": "user",
+                "localField": "customer_id",
+                "foreignField": "_id",
+                "as": "user_info"
+            }},
+            {"$unwind": "$user_info"},
+            {"$project": {
+                "_id": 0,
+                "order_id": 1,
+                "buyer_name": {
+                    "$concat": [
+                        "$user_info.first_name",
+                        {"$cond": {"if": {"$ne": ["$user_info.last_name", None]}, "then": " ", "else": ""}},
+                        {"$ifNull": ["$user_info.last_name", ""]}
+                    ]
+                }
+            }}
         ]
-        industry_groups = list(product.objects.aggregate(*industry_pipeline))
-        industry_list = []
-        for g in industry_groups:
-            if g["_id"]:
-                ind_doc = industry.objects(id=g["_id"]).first()
-                industry_list.append({
-                    "id": str(g["_id"]),
-                    "name": ind_doc.name if ind_doc else str(g["_id"])
-                })
-        kpis["industries_info"] = {
-            "count": len(industry_list),
-            "industries": industry_list
-        }
 
-        # KPI 6: Number of Brands
-        brand_pipeline = [
-            {"$match": product_filter},
-            {"$group": {"_id": "$brand_name"}},
-            {"$count": "num_brands"}
+        all_orders = list(order.objects.aggregate(*orders_pipeline))
+        kpis["total_orders"] = len(all_orders)
+        kpis["all_order_details"] = [
+            {"order_id": o["order_id"], "buyer_name": o["buyer_name"]} for o in all_orders
         ]
-        brand_result = list(product.objects.aggregate(*brand_pipeline))
-        kpis["number_of_brands"] = brand_result[0]["num_brands"] if brand_result else 0
 
-        # KPI 7: Number of End-Level Categories
-        category_pipeline = [
-            {"$match": product_filter},
-            {"$group": {"_id": "$category_id"}},
-            {"$count": "num_end_level_categories"}
-        ]
-        category_result = list(product.objects.aggregate(*category_pipeline))
-        kpis["number_of_end_level_categories"] = category_result[0]["num_end_level_categories"] if category_result else 0
-
-        # KPI 8: Total Active Buyers (your snippet)
+        # ------------------- KPI 3: Total Active Buyers -------------------
         role_obj = role.objects(name="dealer_admin").first()
-        dealers_query = user.objects(role_id=role_obj.id, manufacture_unit_id=manufacture_unit_id_obj)
+        dealers_query = user.objects(role_id=role_obj.id)
+
+        if manufacture_unit_id:
+            dealers_query = dealers_query.filter(manufacture_unit_id=manufacture_unit_id_obj)
 
         if keyword:
             regex_pattern = f".*{re.escape(keyword)}.*"
@@ -576,7 +537,7 @@ def seller_dashboard_view(request):
                 ]
             })
 
-        dealers_query = dealers_query.only("first_name", "last_name", "email")
+        dealers_query = dealers_query.only("first_name", "last_name", "email")  # Reduce memory usage
 
         total_active_buyers_list = [
             {
@@ -591,7 +552,66 @@ def seller_dashboard_view(request):
             "buyers": total_active_buyers_list
         }
 
-        return JsonResponse({"status": True, "kpis": kpis}, status=200)
+        # ------------------- KPI 4: Average Order Value -------------------
+        if kpis["total_orders"] > 0:
+            kpis["average_order_value"] = round(kpis["total_revenue"] / kpis["total_orders"], 2)
+        else:
+            kpis["average_order_value"] = 0
+
+        kpis["aov_details"] = {
+            "total_revenue_used_for_aov": kpis["total_revenue"],
+            "total_orders_used_for_aov": kpis["total_orders"]
+        }
+
+        # ------------------- KPI 5: Number of SKUs -------------------
+        sku_pipeline = [
+            {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
+            {"$group": {"_id": "$sku_number_product_code_item_number"}},
+            {"$count": "num_skus"}
+        ]
+        sku_result = list(product.objects.aggregate(*sku_pipeline))
+        kpis["number_of_skus"] = sku_result[0]["num_skus"] if sku_result else 0
+
+        # ------------------- KPI 6: Number of Industries (with names) -------------------
+        industry_pipeline = [
+            {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
+            {"$group": {"_id": "$industry_id_str"}}
+        ]
+        industry_groups = list(product.objects.aggregate(*industry_pipeline))
+
+        industry_list = []
+        for g in industry_groups:
+            if g["_id"]:
+                industry_doc = industry.objects(id=g["_id"]).first()
+                industry_list.append({
+                    "id": str(g["_id"]),
+                    "name": industry_doc.name if industry_doc else str(g["_id"])
+                })
+
+        kpis["industries_info"] = {
+            "count": len(industry_list),
+            "industries": industry_list
+        }
+
+        # ------------------- KPI 7: Number of Brands -------------------
+        brand_pipeline = [
+            {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
+            {"$group": {"_id": "$brand_name"}},
+            {"$count": "num_brands"}
+        ]
+        brand_result = list(product.objects.aggregate(*brand_pipeline))
+        kpis["number_of_brands"] = brand_result[0]["num_brands"] if brand_result else 0
+
+        # ------------------- KPI 8: Number of End-Level Categories -------------------
+        category_pipeline = [
+            {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
+            {"$group": {"_id": "$category_id"}},
+            {"$count": "num_end_level_categories"}
+        ]
+        category_result = list(product.objects.aggregate(*category_pipeline))
+        kpis["number_of_end_level_categories"] = category_result[0]["num_end_level_categories"] if category_result else 0
+
+        return JsonResponse({"status": True, "kpis": kpis})
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
@@ -3622,3 +3642,6 @@ def save_valid_data(xl_data, manufacture_unit_id, industry_id_str, allow_duplica
 #             "visible": visible
 #         })
 # # updateindustryproject()
+
+
+
