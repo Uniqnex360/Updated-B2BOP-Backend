@@ -443,10 +443,11 @@ def seller_dashboard_view(request):
         if not manufacture_unit_id:
             return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
 
+        # Convert manufacture_unit_id to ObjectId if possible
         try:
             manufacture_unit_id_obj = ObjectId(manufacture_unit_id)
         except Exception:
-            manufacture_unit_id_obj = manufacture_unit_id  # already an object or string
+            manufacture_unit_id_obj = manufacture_unit_id
 
         kpis = {}
 
@@ -527,10 +528,15 @@ def seller_dashboard_view(request):
             dealers_query = dealers_query.filter(manufacture_unit_id=manufacture_unit_id_obj)
 
         if keyword:
-            dealers_query = [
-                u for u in dealers_query
-                if keyword in f"{u.first_name} {u.last_name or ''}".lower()
-            ]
+            regex_pattern = f".*{re.escape(keyword)}.*"
+            dealers_query = dealers_query.filter(__raw__={
+                "$or": [
+                    {"first_name": {"$regex": regex_pattern, "$options": "i"}},
+                    {"last_name": {"$regex": regex_pattern, "$options": "i"}}
+                ]
+            })
+
+        dealers_query = dealers_query.only("first_name", "last_name", "email")  # Reduce memory usage
 
         total_active_buyers_list = [
             {
@@ -575,7 +581,6 @@ def seller_dashboard_view(request):
         industry_list = []
         for g in industry_groups:
             if g["_id"]:
-                # assumes you have an Industry model with .name
                 industry_doc = industry.objects(id=g["_id"]).first()
                 industry_list.append({
                     "id": str(g["_id"]),
@@ -609,7 +614,6 @@ def seller_dashboard_view(request):
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
-
 @csrf_exempt
 def obtainbrandList(request):
     # Retrieve parameters from the request
