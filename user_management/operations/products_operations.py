@@ -428,6 +428,7 @@ def getIndustryCategoryBrand(request):
         return JsonResponse({"status": False, "error": str(e)}, status=400)
 
 
+
 @csrf_exempt
 def seller_dashboard_view(request):
     if request.method != "POST":
@@ -561,6 +562,34 @@ def seller_dashboard_view(request):
         ]
         category_result = list(product.objects.aggregate(*category_pipeline))
         kpis["number_of_end_level_categories"] = category_result[0]["num_end_level_categories"] if category_result else 0
+
+        # KPI 8: Total Active Buyers (your snippet)
+        role_obj = role.objects(name="dealer_admin").first()
+        dealers_query = user.objects(role_id=role_obj.id, manufacture_unit_id=manufacture_unit_id_obj)
+
+        if keyword:
+            regex_pattern = f".*{re.escape(keyword)}.*"
+            dealers_query = dealers_query.filter(__raw__={
+                "$or": [
+                    {"first_name": {"$regex": regex_pattern, "$options": "i"}},
+                    {"last_name": {"$regex": regex_pattern, "$options": "i"}}
+                ]
+            })
+
+        dealers_query = dealers_query.only("first_name", "last_name", "email")
+
+        total_active_buyers_list = [
+            {
+                "id": str(u.id),
+                "name": f"{u.first_name} {u.last_name or ''}".strip(),
+                "email": u.email
+            } for u in dealers_query
+        ]
+
+        kpis["active_buyers_info"] = {
+            "count": len(total_active_buyers_list),
+            "buyers": total_active_buyers_list
+        }
 
         return JsonResponse({"status": True, "kpis": kpis}, status=200)
 
