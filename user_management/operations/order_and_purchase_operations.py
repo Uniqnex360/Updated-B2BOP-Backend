@@ -45,6 +45,8 @@ def getLocalTime(current_time):
     return formatted_time
 
 
+#create0r update user cart item
+
 @csrf_exempt
 def createOrUpdateUserCartItem(request):
     data = dict()
