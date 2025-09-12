@@ -34,7 +34,7 @@ urlpatterns = [
     path('deleteBuyer/', deleteBuyer, name="deleteBuyer"),
 
 
-#santhosh dashboard selller
+#santhosh dashboard selllers
  path('getIndustryCategoryBrand/', getIndustryCategoryBrand, name='getIndustryCategoryBrand'),
  
 path('seller_dashboard_kpis/', seller_dashboard_view, name='seller_dashboard_kpis'),
