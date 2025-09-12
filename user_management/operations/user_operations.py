@@ -33,7 +33,10 @@ from rest_framework.parsers import JSONParser
 from rest_framework.decorators import api_view
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 import json
+
+
 
 
 
@@ -1610,66 +1613,61 @@ def updateIndustryForManufactureUnit(request):
     data["is_updated"] = True
     return data
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 
 @csrf_exempt
 def obtainIndustryForManufactureUnit(request):
     """
-    POST API to get all industries for a manufacture unit.
-    Body: { "manufacture_unit_id": "<id>" }
+    GET or POST API to fetch all industries for a manufacture unit.
+    Maintains the same response format for frontend.
     """
-    if request.method != "POST":
-        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
-
     try:
-        # Parse JSON body
-        data = json.loads(request.body.decode("utf-8"))
-        manufacture_unit_id = data.get("manufacture_unit_id")
+        # Allow both GET and POST for flexibility
+        if request.method == "GET":
+            manufacture_unit_id = request.GET.get("manufacture_unit_id")
+        else:
+            data = json.loads(request.body.decode("utf-8"))
+            manufacture_unit_id = data.get("manufacture_unit_id")
+
         if not manufacture_unit_id:
             return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
 
-        # Convert manufacture_unit_id to ObjectId if possible
+        # Convert to ObjectId if needed
+        from bson import ObjectId
         try:
             manufacture_unit_id_obj = ObjectId(manufacture_unit_id)
         except Exception:
             manufacture_unit_id_obj = manufacture_unit_id
 
-        # 1. Get unique industry_id_str from products of this manufacture unit
-        industry_pipeline = [
-            {"$match": {
-                "manufacture_unit_id": manufacture_unit_id_obj,
-                "industry_id_str": {"$nin": [None, "", []]}
-            }},
+        # --- Pipeline: fetch unique industry IDs from products ---
+        pipeline = [
+            {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
             {"$group": {"_id": "$industry_id_str"}}
         ]
-        industry_groups = list(product.objects.aggregate(*industry_pipeline))
+        industry_groups = list(product.objects.aggregate(*pipeline))
 
-        # 2. For each id, get the name from industry collection
+        # --- Fetch industry names for each unique ID ---
         industry_list = []
         for g in industry_groups:
             if g["_id"]:
                 industry_doc = industry.objects(id=g["_id"]).first()
-                if industry_doc:  # only include valid industries
-                    industry_list.append({
-                        "id": str(g["_id"]),
-                        "name": industry_doc.name
-                    })
+                industry_list.append({
+                    "id": str(g["_id"]),
+                    "name": industry_doc.name if industry_doc else str(g["_id"])
+                })
 
-        # 3. Sort alphabetically by name
-        industry_list = sorted(industry_list, key=lambda x: x["name"])
-
-        return JsonResponse({
+        # --- Final response for frontend ---
+        result = {
             "status": True,
-            "industries_info": {
-                "count": len(industry_list),
-                "industries": industry_list
-            }
-        })
+            "industries": industry_list,
+            "count": len(industry_list)
+        }
+
+        return JsonResponse(result, safe=False)
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
-
-
-
 @csrf_exempt
 def createIndustry(request):
     data = dict()
