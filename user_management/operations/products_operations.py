@@ -2193,6 +2193,15 @@ def saveProductCategory(manufacture_unit_id,name,level,parent_id,industry_id_str
         DatabaseModel.update_documents(product_category.objects,{"id" : parent_id},{"add_to_set__child_categories" : product_category_id})
 
     return product_category_id
+def clean_industry_name(raw_name):
+    if not raw_name:
+        return "General"
+    # Remove leading/trailing whitespace and non-breaking spaces
+    name = raw_name.strip().replace('\xa0', '')
+    # Convert "nan" (string) or empty to General
+    if not name or name.lower() == "nan":
+        return "General"
+    return name
 
 def get_industry_id_by_name(industry_name):
     if not industry_name:
@@ -2217,7 +2226,8 @@ def save_file(request):
    
     for i in xl_data:
         print(i.get('Industry')) 
-        industry_name = i.get('Industry', '').strip() or "General"
+        industry_name_raw = i.get('Industry', '')
+        industry_name=clean_industry_name(industry_name_raw)
         industry_id_str = str(get_industry_id_by_name(industry_name))
 
         print(f"Product: {i['product_obj']['product_name']}, Industry Name: {industry_name}, Industry ID: {industry_id_str}")
