@@ -1822,7 +1822,7 @@ def obtainProductDetails(request):
 @csrf_exempt
 def upload_file(request):
     
-    general_fields = ['skuNumber code itemNumber', 'model', 'mpn', 'upc ean', 'level1 category', 'level2 category', 'level3 category', 'level4 category', 'level5 category', 'level6 category', 'breadcrumb', 'brandName', "brandlogo", "vendorName", 'productName', 'long description', 'short description', 'features', 'images', 'attributes', 'tags', 'msrp', 'currency', 'was price', 'list price', 'discount', 'quantity', 'quantityPrice', 'availability', 'return applicable']
+    general_fields = ['skuNumber code itemNumber', 'model', 'mpn', 'upc ean',"industry" ,'level1 category', 'level2 category', 'level3 category', 'level4 category', 'level5 category', 'level6 category', 'breadcrumb', 'brandName', "brandlogo", "vendorName", 'productName', 'long description', 'short description', 'features', 'images', 'attributes', 'tags', 'msrp', 'currency', 'was price', 'list price', 'discount', 'quantity', 'quantityPrice', 'availability', 'return applicable']
 
     image_list = ['image_1', 'image_2', 'image_3', 'image_4', 'image_5','image_6', 'image_7', 'image_8', 'image_9', 'image_10']
 
@@ -1939,8 +1939,10 @@ def upload_file(request):
 
             elif pd.notnull(row_dict[j]) and (fields_list[j] == 'upc ean' or fields_list[j] == "unspsc"):
                 xl_dict['product_obj']['upc_ean'] = str(row_dict[j])
-
-
+                
+            elif pd.notnull(row_dict[j]) and (fields_list[j] =="industry"):
+                xl_dict['Industry'] = str(row_dict[j])
+                   
             elif pd.notnull(row_dict[j]) and (fields_list[j] == 'level1 category' or fields_list[j] ==  "category_1"):
                 xl_dict['category_obj']['level 1'] = str(row_dict[j])
 
@@ -2225,6 +2227,7 @@ def save_file(request):
     allow_duplicate = json_request.get('allow_duplicate')
    
     for i in xl_data:
+        print(i)
         print(i.get('Industry')) 
         industry_name_raw = i.get('Industry', '')
         industry_name=clean_industry_name(industry_name_raw)
