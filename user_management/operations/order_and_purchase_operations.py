@@ -186,140 +186,113 @@ def totalCheckOutAmount(request):
 
 @csrf_exempt
 def obtainOrderList(request):
-    json_request = JSONParser().parse(request)
-    manufacture_unit_id = json_request['manufacture_unit_id']
-    search_query = json_request['search_query']
-    sort_by = json_request['sort_by']
-    start_date_str = json_request.get('start_date')
-    end_date_str = json_request.get('end_date')
-    sort_by_value = json_request['sort_by_value']
-    dealer_list = json_request.get('dealer_list')
-    delivery_status = json_request['delivery_status']
-    fulfilled_status = json_request['fulfilled_status']
-    payment_status = json_request['payment_status']
-    industry_id_str = json_request.get('industry_id')
-    is_reorder = json_request.get('is_reorder')
-
-    # 🆕 pagination parameters
-    page = int(json_request.get('page', 1))
-    limit = int(json_request.get('limit', 10))  # default 10 per page
-    skip = (page - 1) * limit
-
-    status_match = {
-        'manufacture_unit_id_str': manufacture_unit_id
-    }
-    if delivery_status != "all":
-        status_match['delivery_status'] = delivery_status
-    if fulfilled_status != "all":
-        status_match['fulfilled_status'] = fulfilled_status
-    if payment_status != "all":
-        status_match['payment_status'] = payment_status
-    if industry_id_str is not None:
-        status_match['industry_id_str'] = industry_id_str
-    if is_reorder is not None and is_reorder != "" and is_reorder != "all":
-        is_reorder = is_reorder.lower()
-        status_match['is_reorder'] = True if is_reorder == "yes" else False
-
-    pipeline = [
-        {"$match": status_match},
-        {
-            "$lookup": {
-                "from": "user",
-                "localField": "customer_id",
-                "foreignField": "_id",
-                "as": "user_ins"
-            }
-        },
-        {"$unwind": "$user_ins"}
-    ]
-
-    if dealer_list:
-        dealer_list = [ObjectId(ins) for ins in dealer_list]
-        pipeline.append({
-            "$match": {"user_ins._id": {"$in": dealer_list}}
-        })
-
-    if start_date_str:
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-        local_timezone = datetime.now().astimezone().tzinfo
-        start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
-        if end_date_str:
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-            end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
-        else:
-            end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
-
-        start_of_day_utc = start_of_day.astimezone(pytz.utc)
-        end_of_day_utc = end_of_day.astimezone(pytz.utc)
-        pipeline.append({
-            "$match": {
-                "creation_date": {"$gte": start_of_day_utc, "$lte": end_of_day_utc}
-            }
-        })
-
-    project_obj = [
-        {
-            "$lookup": {
-                "from": "address",
-                "localField": "shipping_address_id",
-                "foreignField": "_id",
-                "as": "address_ins"
-            }
-        },
-        {
-            "$unwind": {
-                "path": "$address_ins",
-                "preserveNullAndEmptyArrays": True
-            }
-        },
-        {
-            "$project": {
-                "_id": {"$toString": "$_id"},
-                "order_id": 1,
-                "dealer_name": {
-                    "$concat": [
-                        "$user_ins.first_name",
-                        {
-                            "$cond": {
-                                "if": {"$ne": ["$user_ins.last_name", None]},
-                                "then": " ",
-                                "else": ""
-                            }
-                        },
-                        {"$ifNull": ["$user_ins.last_name", ""]}
-                    ]
-                },
-                "total_items": 1,
-                "amount": 1,
-                "currency": 1,
-                "shipping_service": "-",
-                "tracking_code": "-",
-                "creation_date": {
-                    "$dateToString": {
-                        "format": "%Y-%m-%dT%H:%M:%S.%LZ",
-                        "date": "$creation_date",
-                    }
-                },
-                "address": {
-                    "street": "$address_ins.street",
-                    "city": "$address_ins.city",
-                    "state": "$address_ins.state",
-                    "country": "$address_ins.country",
-                    "zipCode": "$address_ins.zipCode"
-                },
-                "delivery_status": 1,
-                "fulfilled_status": 1,
-                "payment_status": 1,
-                "is_reorder": 1
-            }
+    try:
+        json_request = JSONParser().parse(request)
+        manufacture_unit_id = json_request['manufacture_unit_id']
+        search_query = json_request.get('search_query', '')
+        sort_by = json_request.get('sort_by', '_id')
+        start_date_str = json_request.get('start_date')
+        end_date_str = json_request.get('end_date')
+        sort_by_value = int(json_request.get('sort_by_value', -1))
+        dealer_list = json_request.get('dealer_list', [])
+        delivery_status = json_request.get('delivery_status', 'all')
+        fulfilled_status = json_request.get('fulfilled_status', 'all')
+        payment_status = json_request.get('payment_status', 'all')
+        industry_id_str = json_request.get('industry_id')
+        is_reorder = json_request.get('is_reorder')
+ 
+        # Pagination parameters with type casting and default values
+        page = int(json_request.get('page', 1))
+        limit = int(json_request.get('limit', 10))
+        skip = (page - 1) * limit
+ 
+        # Initial $match stage for filtering
+        status_match = {
+            'manufacture_unit_id_str': manufacture_unit_id
         }
-    ]
-    pipeline.extend(project_obj)
-
-    # 🔍 search filter
-    if search_query:
-        pipeline.append({
-            "$match": {
+        if delivery_status != "all":
+            status_match['delivery_status'] = delivery_status
+        if fulfilled_status != "all":
+            status_match['fulfilled_status'] = fulfilled_status
+        if payment_status != "all":
+            status_match['payment_status'] = payment_status
+        if industry_id_str is not None:
+            status_match['industry_id_str'] = industry_id_str
+        if is_reorder is not None and is_reorder != "" and is_reorder != "all":
+            is_reorder = is_reorder.lower()
+            status_match['is_reorder'] = True if is_reorder == "yes" else False
+ 
+        # Build the initial pipeline stages for filtering and lookups
+        base_pipeline = [
+            {"$match": status_match},
+            {
+                "$lookup": {
+                    "from": "user",
+                    "localField": "customer_id",
+                    "foreignField": "_id",
+                    "as": "user_ins"
+                }
+            },
+            {"$unwind": "$user_ins"}
+        ]
+ 
+        if dealer_list:
+            dealer_list = [ObjectId(ins) for ins in dealer_list]
+            base_pipeline.append({
+                "$match": {"user_ins._id": {"$in": dealer_list}}
+            })
+ 
+        if start_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            local_timezone = datetime.now().astimezone().tzinfo
+            start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+            else:
+                end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+ 
+            start_of_day_utc = start_of_day.astimezone(pytz.utc)
+            end_of_day_utc = end_of_day.astimezone(pytz.utc)
+            base_pipeline.append({
+                "$match": {
+                    "creation_date": {"$gte": start_of_day_utc, "$lte": end_of_day_utc}
+                }
+            })
+ 
+        # Separate pipeline to get the total count of documents
+        count_pipeline = base_pipeline + [
+            {
+                "$lookup": {
+                    "from": "address",
+                    "localField": "shipping_address_id",
+                    "foreignField": "_id",
+                    "as": "address_ins"
+                }
+            },
+            {
+                "$unwind": {
+                    "path": "$address_ins",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+            {
+                "$project": {
+                    "dealer_name": {
+                        "$concat": [
+                            "$user_ins.first_name",
+                            {"$cond": {"if": {"$ne": ["$user_ins.last_name", None]}, "then": " ", "else": ""}},
+                            {"$ifNull": ["$user_ins.last_name", ""]}
+                        ]
+                    },
+                    "order_id": 1,
+                    "address.city": "$address_ins.city",
+                    "address.country": "$address_ins.country",
+                    "delivery_status": 1,
+                    "payment_status": 1
+                }
+            },
+            {"$match": {
                 "$or": [
                     {"dealer_name": {"$regex": search_query, "$options": "i"}},
                     {"order_id": {"$regex": search_query, "$options": "i"}},
@@ -328,29 +301,94 @@ def obtainOrderList(request):
                     {"delivery_status": {"$regex": search_query, "$options": "i"}},
                     {"payment_status": {"$regex": search_query, "$options": "i"}}
                 ]
-            }
-        })
-
-    # sorting
-    if sort_by:
-        pipeline.append({"$sort": {sort_by: sort_by_value}})
-    else:
-        pipeline.append({"$sort": {"_id": -1}})
-
-    # 🆕 add pagination stages at the end
-    pipeline.append({"$skip": skip})
-    pipeline.append({"$limit": limit})
-
-    order_list = list(order.objects.aggregate(*pipeline))
-    return JsonResponse({
-        "status": True,
-        "page": page,
-        "limit": limit,
-        "count": len(order_list),  # number of records in this page
-        "data": order_list
-    }, safe=False)
-
-
+            }},
+            {"$count": "total_count"}
+        ]
+        # Execute the count pipeline first
+        total_count_result = list(order.objects.aggregate(*count_pipeline))
+        total_count = total_count_result[0]['total_count'] if total_count_result else 0
+ 
+        # Main pipeline for fetching data with sorting and pagination
+        data_pipeline = base_pipeline + [
+            {
+                "$lookup": {
+                    "from": "address",
+                    "localField": "shipping_address_id",
+                    "foreignField": "_id",
+                    "as": "address_ins"
+                }
+            },
+            {
+                "$unwind": {
+                    "path": "$address_ins",
+                    "preserveNullAndEmptyArrays": True
+                }
+            },
+            {
+                "$project": {
+                    "_id": {"$toString": "$_id"},
+                    "order_id": 1,
+                    "dealer_name": {
+                        "$concat": [
+                            "$user_ins.first_name",
+                            {"$cond": {"if": {"$ne": ["$user_ins.last_name", None]}, "then": " ", "else": ""}},
+                            {"$ifNull": ["$user_ins.last_name", ""]}
+                        ]
+                    },
+                    "total_items": 1,
+                    "amount": 1,
+                    "currency": 1,
+                    "shipping_service": "-",
+                    "tracking_code": "-",
+                    "creation_date": {
+                        "$dateToString": {
+                            "format": "%Y-%m-%dT%H:%M:%S.%LZ",
+                            "date": "$creation_date",
+                        }
+                    },
+                    "address": {
+                        "street": "$address_ins.street",
+                        "city": "$address_ins.city",
+                        "state": "$address_ins.state",
+                        "country": "$address_ins.country",
+                        "zipCode": "$address_ins.zipCode"
+                    },
+                    "delivery_status": 1,
+                    "fulfilled_status": 1,
+                    "payment_status": 1,
+                    "is_reorder": 1
+                }
+            },
+            {"$match": {
+                "$or": [
+                    {"dealer_name": {"$regex": search_query, "$options": "i"}},
+                    {"order_id": {"$regex": search_query, "$options": "i"}},
+                    {"address.city": {"$regex": search_query, "$options": "i"}},
+                    {"address.country": {"$regex": search_query, "$options": "i"}},
+                    {"delivery_status": {"$regex": search_query, "$options": "i"}},
+                    {"payment_status": {"$regex": search_query, "$options": "i"}}
+                ]
+            }},
+            {"$sort": {sort_by: sort_by_value}},
+            {"$skip": skip},
+            {"$limit": limit}
+        ]
+ 
+        # Execute the main data pipeline
+        order_list = list(order.objects.aggregate(*data_pipeline))
+ 
+        return JsonResponse({
+            "status": True,
+            "page": page,
+            "limit": limit,
+            "count": len(order_list),
+            "total_count": total_count,  # New field for total record count
+            "data": order_list
+        }, safe=False)
+ 
+    except Exception as e:
+        return JsonResponse({"status": False, "message": str(e)}, status=500)
+    
 @api_view(('GET', 'POST'))
 def exportOrders(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
