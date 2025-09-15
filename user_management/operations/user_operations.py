@@ -978,95 +978,101 @@ def updateMailTemplate(request):
     data["is_updated"] = "Mail Template update sucessfully"
     return data
 
-#obtainDealerDetails
-def obtainDealerDetails(request):
-    data = dict()
-    user_id = request.GET.get('user_id')
-    pipeline = [
-    {"$match": {"_id": ObjectId(user_id)}},  
-    {
-        "$project": {
-            "_id": 0,
-            "id": {"$toString": "$_id"},
-            "first_name" : {"$ifNull": ["$first_name", ""]},
-            "last_name" : {"$ifNull": ["$last_name", ""]},
-            "email": {"$ifNull": ["$email", ""]}, 
-            "mobile_number": {"$ifNull": ["$mobile_number", ""]},
-            # "age" : {"$ifNull": ["$age", ""]},
-            "date_of_birth" : {"$ifNull": ["$date_of_birth", ""]},
-            "profile_image" : {"$ifNull": ["$profile_image", ""]},
-            "company_name" : {"$ifNull": ["$company_name", ""]},
-            # "default_address_id" : {"$ifNull": ["$default_address_id", None]},
-            # "address_id_list" : {"$ifNull": ["$address_id_list", []]},
-            # "bank_details_id_list" : {"$ifNull": ["$bank_details_id_list", []]},
-        }
-        }
-    
-    ]
-    user_obj = list(user.objects.aggregate(*pipeline))
-    data['user_details'] = user_obj[0]
-    pipeline =[
-        {
-            "$match" : {
-                "customer_id" : ObjectId(user_id)
-            }
-        },
-        {
-            "$lookup" :{
-                "from" : "user_cart_item",
-                "localField" : "order_items",
-                "foreignField" : "_id",
-                "as" : "cart_ins"
-            }
-        },
-        {"$unwind" : "$cart_ins"},
-        {
-            "$lookup" :{
-                "from" : "product",
-                "localField" : "cart_ins.product_id",
-                "foreignField" : "_id",
-                "as" : "products_ins"
-            }
-        },
-        {"$unwind" : "$products_ins"},
-        {
-        "$group" :{
-                "_id": "$_id",
-                "order_id" : {"$first" : "$order_id"},
-                "amount" : {"$first" : "$amount"},
-                "currency" : {"$first" : "$currency"}, 
-                "product_list" : {"$push" : {
-                "product_name" : "$products_ins.product_name",
-                "primary_image" : {"$first":"$products_ins.images"},
-                "sku_number" : "$products_ins.sku_number_product_code_item_number",
-                "mpn_number" : "$products_ins.mpn",
-                "brand_name" : "$products_ins.brand_name",
-                "price" : {"$ifNull" : ["$cart_ins.unit_price",0.0]},
-                "currency" : "$products_ins.currency",
-                "quantity" : "$cart_ins.quantity",
-                "total_price" : "$cart_ins.price"
-                                            }}
-        }
-        },
-        {
-        "$project" :{
-                "_id": 0,
-                "id": {"$toString":"$_id"},
-                "order_id" : "$order_id",
-                "amount" : {"$concat" : [{"$toString":"$amount"},"$currency"]},
-                "product_list" : "$product_list"
-        }
-        },
-        {
-            "$sort" : {
-                "id" : -1
-            }
-        }
-    ]
-    order_list = list(order.objects.aggregate(*(pipeline)))
-    data['order_list'] = order_list
-    return data
+from bson import ObjectId
 
+from django.http import JsonResponse
+
+# Assuming 'user' and 'order' are your MongoDB collection objects
+ 
+def obtainDealerDetails(request):
+    data = {}
+
+    user_id = request.GET.get('user_id')
+
+    # convert to ObjectId safely
+    try:
+        user_object_id = ObjectId(user_id)
+    except Exception:
+        return JsonResponse({'status': 'error', 'message': 'Invalid user_id'})
+
+    # user details pipeline
+    user_pipeline = [
+        {"$match": {"_id": user_object_id}},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "first_name": {"$ifNull": ["$first_name", ""]},
+                "last_name": {"$ifNull": ["$last_name", ""]},
+                "email": {"$ifNull": ["$email", ""]},
+                "mobile_number": {"$ifNull": ["$mobile_number", ""]},
+                "date_of_birth": {"$ifNull": ["$date_of_birth", ""]},
+                "profile_image": {"$ifNull": ["$profile_image", ""]},
+                "company_name": {"$ifNull": ["$company_name", ""]}
+            }
+        }
+    ]
+    user_obj = list(user.objects.aggregate(*user_pipeline))
+    data['user_details'] = user_obj[0] if user_obj else {}
+
+    # orders pipeline
+    orders_pipeline = [
+        {"$match": {"customer_id": user_object_id}},  # ✅ here
+        {
+            "$lookup": {
+                "from": "user_cart_item",
+                "localField": "order_items",
+                "foreignField": "_id",
+                "as": "cart_ins"
+            }
+        },
+        {"$unwind": {"path": "$cart_ins", "preserveNullAndEmptyArrays": True}},
+        {
+            "$lookup": {
+                "from": "product",
+                "localField": "cart_ins.product_id",
+                "foreignField": "_id",
+                "as": "products_ins"
+            }
+        },
+        {"$unwind": {"path": "$products_ins", "preserveNullAndEmptyArrays": True}},
+        {
+            "$group": {
+                "_id": "$_id",
+                "order_id": {"$first": "$order_id"},
+                "amount": {"$first": "$amount"},
+                "currency": {"$first": "$currency"},
+                "product_list": {
+                    "$push": {
+                        "product_name": "$products_ins.product_name",
+                        "primary_image": {"$first": "$products_ins.images"},
+                        "sku_number": "$products_ins.sku_number_product_code_item_number",
+                        "mpn_number": "$products_ins.mpn",
+                        "brand_name": "$products_ins.brand_name",
+                        "price": {"$ifNull": ["$cart_ins.unit_price", 0.0]},
+                        "currency": "$products_ins.currency",
+                        "quantity": "$cart_ins.quantity",
+                        "total_price": "$cart_ins.price"
+                    }
+                }
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "order_id": "$order_id",
+                "amount": "$amount",
+                "product_list": "$product_list"
+            }
+        },
+        {"$sort": {"id": -1}}
+    ]
+
+    order_list = list(order.objects.aggregate(*orders_pipeline))
+    data['order_list'] = order_list
+
+    return JsonResponse({'status': 'success', 'data': data})
 @csrf_exempt
 @api_view(['GET'])
 def dealer_order_product_brand_autosuggest(request):
