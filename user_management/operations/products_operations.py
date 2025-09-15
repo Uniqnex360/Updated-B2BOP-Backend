@@ -18,13 +18,21 @@ from decimal import Decimal
 from django.views.decorators.csrf import csrf_exempt
 from mongoengine.queryset.visitor import Q
 
+from bson import ObjectId
+from django.http import JsonResponse
+from django.core.exceptions import ObjectDoesNotExist
+from collections import defaultdict
+
+from bson import ObjectId
+from django.http import JsonResponse
+from django.core.exceptions import ObjectDoesNotExist
+from collections import defaultdict
+
 def obtainProductCategoryList(request):
-    # Retrieve parameters from the request
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
     product_category_id = request.GET.get('product_category_id')
     industry_id_str = request.GET.get('industry_id')
 
-    # If product_category_id is None, return level 1 categories
     if not product_category_id:
         match = {
             "manufacture_unit_id_str": manufacture_unit_id,
@@ -40,11 +48,13 @@ def obtainProductCategoryList(request):
                     "_id": 0,
                     "id": {"$toString": "$_id"},
                     "name": 1,
-                    "is_parent": {
+                    "level": 1,
+                    # true if it has children = not end-level
+                    "end_level": {
                         "$cond": {
                             "if": {"$ne": ["$child_categories", []]},
-                            "then": True,
-                            "else": False
+                            "then": False,
+                            "else": True
                         }
                     }
                 }
@@ -52,14 +62,11 @@ def obtainProductCategoryList(request):
         ]
         product_category_list = list(product_category.objects.aggregate(*pipeline))
     else:
-        # Validate product_category_id
         try:
             category_oid = ObjectId(product_category_id)
-        except Exception as e:
-            # Handle invalid ObjectId
-            return []
+        except Exception:
+            return JsonResponse([], safe=False)
 
-        # Build the match criteria for the starting category
         match_starting_category = {
             "id": category_oid,
             "manufacture_unit_id_str": manufacture_unit_id
@@ -68,24 +75,20 @@ def obtainProductCategoryList(request):
             match_starting_category["industry_id_str"] = industry_id_str
 
         try:
-            # Fetch the starting category
             starting_category = product_category.objects.get(**match_starting_category)
-        except DoesNotExist:
-            # Starting category does not exist
-            return []
+        except ObjectDoesNotExist:
+            return JsonResponse([], safe=False)
 
-        # Initialize the list to collect categories
         product_category_list = []
 
-        # If the starting category is an end-level category, return it
         if starting_category.end_level:
             product_category_list.append({
                 "id": str(starting_category.id),
                 "name": starting_category.name,
-                "is_parent": False  # Since it's an end-level category
+                "level": starting_category.level,
+                "end_level": True
             })
         else:
-            # Use $graphLookup to find all descendant end-level categories
             pipeline = [
                 {"$match": {"_id": category_oid}},
                 {
@@ -95,13 +98,11 @@ def obtainProductCategoryList(request):
                         "connectFromField": "_id",
                         "connectToField": "parent_category_id",
                         "as": "descendants",
-                        "maxDepth": 10,  # Adjust as needed
+                        "maxDepth": 10,
                         "depthField": "depth"
                     }
                 },
-                # Unwind the descendants to treat each descendant separately
                 {"$unwind": "$descendants"},
-                # Match only the end-level categories
                 {"$match": {"descendants.end_level": True}},
                 {
                     "$match": {
@@ -109,23 +110,35 @@ def obtainProductCategoryList(request):
                         **({"descendants.industry_id_str": industry_id_str} if industry_id_str else {})
                     }
                 },
-                # Project the required fields
                 {
                     "$project": {
                         "_id": 0,
                         "id": {"$toString": "$descendants._id"},
                         "name": "$descendants.name",
-                        "is_parent": {"$literal": False}  # Use $literal to assign False
+                        "level": "$descendants.level",
+                        "end_level": True
                     }
                 }
             ]
-
-            # Execute the aggregation pipeline
             descendants_list = list(product_category.objects.aggregate(*pipeline))
             product_category_list.extend(descendants_list)
 
-    # Return the result as a JsonResponse
-    return product_category_list
+    # ✅ Group by name but keep level + end_level info
+    grouped = defaultdict(list)
+    for item in product_category_list:
+        grouped[item['name']].append(item)
+
+    grouped_list = []
+    for name, items in grouped.items():
+        grouped_list.append({
+            "name": name,
+            "count": len(items),
+            "level": items[0].get('level'),
+            "end_level": items[0].get('end_level'),
+            "categories": items  # optional: full list of categories with same name
+        })
+
+    return JsonResponse(grouped_list, safe=False)
 
 
 # def obtainProductCategoryList(request):
@@ -3650,6 +3663,3 @@ def save_valid_data(xl_data, manufacture_unit_id, industry_id_str, allow_duplica
 #             "visible": visible
 #         })
 # # updateindustryproject()
-
-
-

@@ -200,8 +200,14 @@ def obtainOrderList(request):
     industry_id_str = json_request.get('industry_id')
     is_reorder = json_request.get('is_reorder')
 
-    status_match = {}
-    status_match['manufacture_unit_id_str'] = manufacture_unit_id
+    # 🆕 pagination parameters
+    page = int(json_request.get('page', 1))
+    limit = int(json_request.get('limit', 10))  # default 10 per page
+    skip = (page - 1) * limit
+
+    status_match = {
+        'manufacture_unit_id_str': manufacture_unit_id
+    }
     if delivery_status != "all":
         status_match['delivery_status'] = delivery_status
     if fulfilled_status != "all":
@@ -212,15 +218,10 @@ def obtainOrderList(request):
         status_match['industry_id_str'] = industry_id_str
     if is_reorder is not None and is_reorder != "" and is_reorder != "all":
         is_reorder = is_reorder.lower()
-        if is_reorder == "yes":
-            status_match['is_reorder'] = True
-        elif is_reorder == "no":
-            status_match['is_reorder'] = False
+        status_match['is_reorder'] = True if is_reorder == "yes" else False
 
     pipeline = [
-        {
-            "$match": status_match
-        },
+        {"$match": status_match},
         {
             "$lookup": {
                 "from": "user",
@@ -232,21 +233,17 @@ def obtainOrderList(request):
         {"$unwind": "$user_ins"}
     ]
 
-    if dealer_list is not None and dealer_list != []:
+    if dealer_list:
         dealer_list = [ObjectId(ins) for ins in dealer_list]
-        dealer_search_obj = {
-            "$match": {
-                "user_ins._id": {"$in": dealer_list}
-            }
-        }
-        pipeline.append(dealer_search_obj)
+        pipeline.append({
+            "$match": {"user_ins._id": {"$in": dealer_list}}
+        })
 
-    if start_date_str is not None and start_date_str != "":
+    if start_date_str:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
         local_timezone = datetime.now().astimezone().tzinfo
-
         start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
-        if end_date_str is not None and end_date_str != "":
+        if end_date_str:
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
             end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
         else:
@@ -254,15 +251,11 @@ def obtainOrderList(request):
 
         start_of_day_utc = start_of_day.astimezone(pytz.utc)
         end_of_day_utc = end_of_day.astimezone(pytz.utc)
-        date_search_obj = {
+        pipeline.append({
             "$match": {
-                "creation_date": {
-                    "$gte": start_of_day_utc,
-                    "$lte": end_of_day_utc
-                }
+                "creation_date": {"$gte": start_of_day_utc, "$lte": end_of_day_utc}
             }
-        }
-        pipeline.append(date_search_obj)
+        })
 
     project_obj = [
         {
@@ -323,9 +316,9 @@ def obtainOrderList(request):
     ]
     pipeline.extend(project_obj)
 
-    # 🔍 Updated search filter
-    if search_query != "":
-        search_obj = {
+    # 🔍 search filter
+    if search_query:
+        pipeline.append({
             "$match": {
                 "$or": [
                     {"dealer_name": {"$regex": search_query, "$options": "i"}},
@@ -336,26 +329,26 @@ def obtainOrderList(request):
                     {"payment_status": {"$regex": search_query, "$options": "i"}}
                 ]
             }
-        }
-        pipeline.append(search_obj)
+        })
 
-    if sort_by != "":
-        pipeline2 = {
-            "$sort": {
-                sort_by: sort_by_value
-            }
-        }
-        pipeline.append(pipeline2)
+    # sorting
+    if sort_by:
+        pipeline.append({"$sort": {sort_by: sort_by_value}})
     else:
-        pipeline2 = {
-            "$sort": {
-                "_id": -1
-            }
-        }
-        pipeline.append(pipeline2)
+        pipeline.append({"$sort": {"_id": -1}})
+
+    # 🆕 add pagination stages at the end
+    pipeline.append({"$skip": skip})
+    pipeline.append({"$limit": limit})
 
     order_list = list(order.objects.aggregate(*pipeline))
-    return order_list
+    return JsonResponse({
+        "status": True,
+        "page": page,
+        "limit": limit,
+        "count": len(order_list),  # number of records in this page
+        "data": order_list
+    }, safe=False)
 
 
 @api_view(('GET', 'POST'))
