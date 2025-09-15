@@ -1087,72 +1087,61 @@ def obtainDealerDetails(request):
         "data": data
     }, safe=False)
  
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from rest_framework.parsers import JSONParser
+
 @csrf_exempt
-def applyBuyerDiscount(request):
+def applyBuyerDiscountq(request):
     """
-    Apply buyer discount to all products in the buyer's orders.
-    Accepts a JSON with user_details and order_list.
+    POST API where seller can set manual discounts for each product for a buyer.
+    Request should include buyer_id, seller_id, and products array with discount info.
     """
+    if request.method != "POST":
+        return JsonResponse({"status": False, "error": "POST method required"}, status=405)
+
     try:
-        data = JSONParser().parse(request)
-        buyer_id = data.get("user_details", {}).get("id")
-        order_list = data.get("order_list", [])
+        json_request = JSONParser().parse(request)
 
-        if not buyer_id or not order_list:
-            return JsonResponse({
-                "status": False, 
-                "error": "buyer_id and order_list are required"
-            }, status=400)
+        buyer_id = json_request.get("buyer_id")
+        seller_id = json_request.get("seller_id")
+        products = json_request.get("products", [])
 
-        discount_type = data.get("discount_type", "percentage")  # percentage or flat
-        discount_value = float(data.get("discount_value", 0))
-        apply_scope = data.get("apply_scope", "total_order")     # product/category/brand/total_order
-        product_ids = data.get("product_ids", [])
-        category_ids = data.get("category_ids", [])
-        brand_ids = data.get("brand_ids", [])
+        if not buyer_id or not seller_id or not products:
+            return JsonResponse({"status": False, "error": "buyer_id, seller_id and products are required"}, status=400)
 
-        # Loop through orders and products
-        for order in order_list:
-            # If total_order scope, calculate total first
-            total_order_price = sum(float(p.get("price", 0)) * int(p.get("quantity", 1)) for p in order.get("product_list", []))
-            
-            for product in order.get("product_list", []):
-                price = float(product.get("price", 0))
-                quantity = int(product.get("quantity", 1))
-                discount_amount = 0
+        discounted_products = []
 
-                # Check if discount applies
-                applies = False
-                if apply_scope == "total_order":
-                    applies = True
-                elif apply_scope == "product" and (not product_ids or product.get("product_id") in product_ids):
-                    applies = True
-                elif apply_scope == "category" and category_ids:
-                    applies = True  # You can expand to check product category
-                elif apply_scope == "brand" and brand_ids:
-                    applies = True  # You can expand to check product brand
+        for product in products:
+            quantity = product.get('quantity', 0)
+            unit_price = product.get('price', 0.0)
 
-                # Calculate discount
-                if applies:
-                    if apply_scope == "total_order":
-                        proportion = (price * quantity) / total_order_price if total_order_price else 0
-                        discount_amount = discount_value * proportion if discount_type == "flat" else (total_order_price * discount_value / 100) * proportion / quantity
-                    else:
-                        discount_amount = discount_value if discount_type == "flat" else (price * discount_value / 100)
+            # seller-specified discount rate or price
+            manual_discount_rate = product.get('discount_rate')  # e.g. 0.15 for 15%
+            manual_discount_price = product.get('discount_price')  # flat amount per unit
 
-                # Update product fields
-                product["discount"] = round(discount_amount, 2)
-                product["final_price"] = round(price - discount_amount, 2)
-                product["total_price_after_discount"] = round((price - discount_amount) * quantity, 2)
+            # apply manual discount
+            if manual_discount_rate is not None:
+                discounted_unit_price = unit_price * (1 - float(manual_discount_rate))
+            elif manual_discount_price is not None:
+                discounted_unit_price = unit_price - float(manual_discount_price)
+            else:
+                # no manual discount provided – fallback to no discount
+                discounted_unit_price = unit_price
 
-                # Persist buyer-specific discount in product collection
-                if "product_id" in product:
-                    db.products.update_one(
-                        {"_id": ObjectId(product["product_id"])},
-                        {"$set": {f"buyer_discounts.{buyer_id}": product["final_price"]}}
-                    )
+            discounted_total_price = discounted_unit_price * quantity
 
-        return JsonResponse({"status": True, "user_details": data.get("user_details"), "order_list": order_list})
+            product['discounted_unit_price'] = round(discounted_unit_price, 2)
+            product['discounted_total_price'] = round(discounted_total_price, 2)
+            discounted_products.append(product)
+
+        return JsonResponse({
+            "status": True,
+            "message": "Manual discount applied successfully",
+            "buyer_id": buyer_id,
+            "seller_id": seller_id,
+            "data": discounted_products
+        }, status=200)
 
     except Exception as e:
         return JsonResponse({"status": False, "error": str(e)}, status=500)
