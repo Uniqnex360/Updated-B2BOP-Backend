@@ -978,26 +978,21 @@ def updateMailTemplate(request):
     data["is_updated"] = "Mail Template update sucessfully"
     return data
 
-from bson import ObjectId
 
+
+    # Assuming you have mongoengine Document classes named `user` and `order`
+    # and product/cart items as in your original code.
+from bson import ObjectId
 from django.http import JsonResponse
 
-# Assuming 'user' and 'order' are your MongoDB collection objects
- 
+@csrf_exempt
 def obtainDealerDetails(request):
-    data = {}
-
+    data = dict()
     user_id = request.GET.get('user_id')
 
-    # convert to ObjectId safely
-    try:
-        user_object_id = ObjectId(user_id)
-    except Exception:
-        return JsonResponse({'status': 'error', 'message': 'Invalid user_id'})
-
-    # user details pipeline
+    # --- Fetch user details ---
     user_pipeline = [
-        {"$match": {"_id": user_object_id}},
+        {"$match": {"_id": ObjectId(user_id)}},
         {
             "$project": {
                 "_id": 0,
@@ -1013,16 +1008,29 @@ def obtainDealerDetails(request):
         }
     ]
     user_obj = list(user.objects.aggregate(*user_pipeline))
-    data['user_details'] = user_obj[0] if user_obj else {}
+    if user_obj:
+        data['user_details'] = user_obj[0]
+    else:
+        data['user_details'] = {}
 
-    # orders pipeline
-    orders_pipeline = [
-        {"$match": {"customer_id": user_object_id}},  # ✅ here
+    # --- Fetch orders and cart items ---
+    order_pipeline = [
+        {"$match": {"customer_id": ObjectId(user_id)}},
+        # Lookup user_cart_item even if order_items array is empty
         {
             "$lookup": {
                 "from": "user_cart_item",
-                "localField": "order_items",
-                "foreignField": "_id",
+                "let": {"order_items": "$order_items"},
+                "pipeline": [
+                    {"$match": {
+                        "$expr": {
+                            "$or": [
+                                {"$in": ["$_id", "$$order_items"]},   # existing order_items
+                                {"$eq": ["$user_id", ObjectId(user_id)]}  # fallback: all items for user
+                            ]
+                        }
+                    }}
+                ],
                 "as": "cart_ins"
             }
         },
@@ -1044,6 +1052,7 @@ def obtainDealerDetails(request):
                 "currency": {"$first": "$currency"},
                 "product_list": {
                     "$push": {
+                        "product_id": {"$toString": "$products_ins._id"},
                         "product_name": "$products_ins.product_name",
                         "primary_image": {"$first": "$products_ins.images"},
                         "sku_number": "$products_ins.sku_number_product_code_item_number",
@@ -1062,17 +1071,92 @@ def obtainDealerDetails(request):
                 "_id": 0,
                 "id": {"$toString": "$_id"},
                 "order_id": "$order_id",
-                "amount": "$amount",
+                "amount": {"$concat": [{"$toString": "$amount"}, "$currency"]},
                 "product_list": "$product_list"
             }
         },
         {"$sort": {"id": -1}}
     ]
 
-    order_list = list(order.objects.aggregate(*orders_pipeline))
+    order_list = list(order.objects.aggregate(*order_pipeline))
     data['order_list'] = order_list
 
-    return JsonResponse({'status': 'success', 'data': data})
+    return JsonResponse({
+        "status": True,
+        "message": "success",
+        "data": data
+    }, safe=False)
+ 
+@csrf_exempt
+def applyBuyerDiscount(request):
+    """
+    Apply buyer discount to all products in the buyer's orders.
+    Accepts a JSON with user_details and order_list.
+    """
+    try:
+        data = JSONParser().parse(request)
+        buyer_id = data.get("user_details", {}).get("id")
+        order_list = data.get("order_list", [])
+
+        if not buyer_id or not order_list:
+            return JsonResponse({
+                "status": False, 
+                "error": "buyer_id and order_list are required"
+            }, status=400)
+
+        discount_type = data.get("discount_type", "percentage")  # percentage or flat
+        discount_value = float(data.get("discount_value", 0))
+        apply_scope = data.get("apply_scope", "total_order")     # product/category/brand/total_order
+        product_ids = data.get("product_ids", [])
+        category_ids = data.get("category_ids", [])
+        brand_ids = data.get("brand_ids", [])
+
+        # Loop through orders and products
+        for order in order_list:
+            # If total_order scope, calculate total first
+            total_order_price = sum(float(p.get("price", 0)) * int(p.get("quantity", 1)) for p in order.get("product_list", []))
+            
+            for product in order.get("product_list", []):
+                price = float(product.get("price", 0))
+                quantity = int(product.get("quantity", 1))
+                discount_amount = 0
+
+                # Check if discount applies
+                applies = False
+                if apply_scope == "total_order":
+                    applies = True
+                elif apply_scope == "product" and (not product_ids or product.get("product_id") in product_ids):
+                    applies = True
+                elif apply_scope == "category" and category_ids:
+                    applies = True  # You can expand to check product category
+                elif apply_scope == "brand" and brand_ids:
+                    applies = True  # You can expand to check product brand
+
+                # Calculate discount
+                if applies:
+                    if apply_scope == "total_order":
+                        proportion = (price * quantity) / total_order_price if total_order_price else 0
+                        discount_amount = discount_value * proportion if discount_type == "flat" else (total_order_price * discount_value / 100) * proportion / quantity
+                    else:
+                        discount_amount = discount_value if discount_type == "flat" else (price * discount_value / 100)
+
+                # Update product fields
+                product["discount"] = round(discount_amount, 2)
+                product["final_price"] = round(price - discount_amount, 2)
+                product["total_price_after_discount"] = round((price - discount_amount) * quantity, 2)
+
+                # Persist buyer-specific discount in product collection
+                if "product_id" in product:
+                    db.products.update_one(
+                        {"_id": ObjectId(product["product_id"])},
+                        {"$set": {f"buyer_discounts.{buyer_id}": product["final_price"]}}
+                    )
+
+        return JsonResponse({"status": True, "user_details": data.get("user_details"), "order_list": order_list})
+
+    except Exception as e:
+        return JsonResponse({"status": False, "error": str(e)}, status=500)
+
 @csrf_exempt
 @api_view(['GET'])
 def dealer_order_product_brand_autosuggest(request):
