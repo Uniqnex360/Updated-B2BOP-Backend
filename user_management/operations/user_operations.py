@@ -1,5 +1,9 @@
 from django.shortcuts import render
 from user_management.models import *
+from user_management.models import product as Product
+
+
+
 from django.http import JsonResponse,HttpResponse
 from b2bop_project.custom_mideleware import SIMPLE_JWT, createJsonResponse, createCookies
 from rest_framework.decorators import api_view
@@ -501,7 +505,7 @@ def generateUserName(request):
     # for i in user_list:
     #     # # Convert the string to a Python list
     #     # try:
-    #     #     # data_list = ast.literal_eval(i.short_description)
+    #     #     # data_listt = ast.literal_eval(i.short_description)
 
     #     #     # # Join the list elements into a single string
     #     #     # result = ', '.join(data_list)
@@ -985,14 +989,74 @@ def updateMailTemplate(request):
 from bson import ObjectId
 from django.http import JsonResponse
 
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from bson import ObjectId
+from datetime import datetime
+import json
+
 @csrf_exempt
 def obtainDealerDetails(request):
     data = dict()
-    user_id = request.GET.get('user_id')
 
-    # --- Fetch user details ---
+    # ---------------- POST: Update seller discount ----------------
+    if request.method == "POST":
+        try:
+            payload = json.loads(request.body)
+            cart_item_id = payload.get("cart_item_id")
+            seller_discount = float(payload.get("seller_discount", 0.0))
+
+            if not cart_item_id:
+                return JsonResponse({"status": False, "message": "cart_item_id is required"}, status=400)
+
+            # Safely convert to ObjectId
+            try:
+                cart_item_oid = ObjectId(cart_item_id)
+            except Exception:
+                return JsonResponse({"status": False, "message": "Invalid cart_item_id format"}, status=400)
+
+            # Fetch cart item
+            cart_item = user_cart_item.objects(id=cart_item_oid).first()
+            if not cart_item:
+                return JsonResponse({"status": False, "message": "Cart item not found"}, status=404)
+
+            # Update discount
+            total_price = cart_item.quantity * cart_item.unit_price
+            cart_item.seller_discount = seller_discount
+            cart_item.discounted_price = total_price - (total_price * (seller_discount / 100.0))
+            cart_item.price = total_price  # keep original total price
+            cart_item.updated_date = datetime.now()
+            cart_item.save()
+
+            return JsonResponse({
+                "status": True,
+                "message": "Seller discount updated successfully",
+                "data": {
+                    "cart_item_id": str(cart_item.id),
+                    "seller_discount": cart_item.seller_discount,
+                    "discounted_price": cart_item.discounted_price
+                }
+            }, safe=False)
+
+        except json.JSONDecodeError:
+            return JsonResponse({"status": False, "message": "Invalid JSON payload"}, status=400)
+        except Exception as e:
+            return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500)
+
+    # ---------------- GET: Fetch user details and orders ----------------
+    user_id = request.GET.get('user_id')
+    if not user_id:
+        return JsonResponse({"status": False, "message": "user_id is required"}, status=400)
+
+    # Safely convert user_id
+    try:
+        user_oid = ObjectId(user_id)
+    except Exception:
+        return JsonResponse({"status": False, "message": "Invalid user_id format"}, status=400)
+
+    # Fetch user details
     user_pipeline = [
-        {"$match": {"_id": ObjectId(user_id)}},
+        {"$match": {"_id": user_oid}},
         {
             "$project": {
                 "_id": 0,
@@ -1008,15 +1072,11 @@ def obtainDealerDetails(request):
         }
     ]
     user_obj = list(user.objects.aggregate(*user_pipeline))
-    if user_obj:
-        data['user_details'] = user_obj[0]
-    else:
-        data['user_details'] = {}
+    data['user_details'] = user_obj[0] if user_obj else {}
 
-    # --- Fetch orders and cart items ---
+    # Fetch orders and cart items with discounts
     order_pipeline = [
-        {"$match": {"customer_id": ObjectId(user_id)}},
-        # Lookup user_cart_item even if order_items array is empty
+        {"$match": {"customer_id": user_oid}},
         {
             "$lookup": {
                 "from": "user_cart_item",
@@ -1025,8 +1085,8 @@ def obtainDealerDetails(request):
                     {"$match": {
                         "$expr": {
                             "$or": [
-                                {"$in": ["$_id", "$$order_items"]},   # existing order_items
-                                {"$eq": ["$user_id", ObjectId(user_id)]}  # fallback: all items for user
+                                {"$in": ["$_id", "$$order_items"]},
+                                {"$eq": ["$user_id", user_oid]}
                             ]
                         }
                     }}
@@ -1061,7 +1121,9 @@ def obtainDealerDetails(request):
                         "price": {"$ifNull": ["$cart_ins.unit_price", 0.0]},
                         "currency": "$products_ins.currency",
                         "quantity": "$cart_ins.quantity",
-                        "total_price": "$cart_ins.price"
+                        "total_price": "$cart_ins.price",
+                        "seller_discount": {"$ifNull": ["$cart_ins.seller_discount", 0.0]},
+                        "discounted_price": {"$ifNull": ["$cart_ins.discounted_price", 0.0]}
                     }
                 }
             }
@@ -1087,15 +1149,17 @@ def obtainDealerDetails(request):
         "data": data
     }, safe=False)
  
-from django.views.decorators.csrf import csrf_exempt
+
 from django.http import JsonResponse
 from rest_framework.parsers import JSONParser
+from user_management.models import user_cart_item
 
 @csrf_exempt
 def applyBuyerDiscountq(request):
     """
     POST API where seller can set manual discounts for each product for a buyer.
     Request should include buyer_id, seller_id, and products array with discount info.
+    Applies discount in real-time to user_cart_item collection.
     """
     if request.method != "POST":
         return JsonResponse({"status": False, "error": "POST method required"}, status=405)
@@ -1112,28 +1176,42 @@ def applyBuyerDiscountq(request):
 
         discounted_products = []
 
-        for product in products:
-            quantity = product.get('quantity', 0)
-            unit_price = product.get('price', 0.0)
+        for prod in products:
+            product_id = prod.get('product_id')
+            quantity = prod.get('quantity', 0)
+            unit_price = prod.get('price', 0.0)
 
-            # seller-specified discount rate or price
-            manual_discount_rate = product.get('discount_rate')  # e.g. 0.15 for 15%
-            manual_discount_price = product.get('discount_price')  # flat amount per unit
+            manual_discount_rate = prod.get('discount_rate')    # % off e.g. 0.10
+            manual_discount_price = prod.get('discount_price')  # flat off per unit
 
-            # apply manual discount
             if manual_discount_rate is not None:
                 discounted_unit_price = unit_price * (1 - float(manual_discount_rate))
             elif manual_discount_price is not None:
                 discounted_unit_price = unit_price - float(manual_discount_price)
             else:
-                # no manual discount provided – fallback to no discount
                 discounted_unit_price = unit_price
 
             discounted_total_price = discounted_unit_price * quantity
 
-            product['discounted_unit_price'] = round(discounted_unit_price, 2)
-            product['discounted_total_price'] = round(discounted_total_price, 2)
-            discounted_products.append(product)
+            prod['discounted_unit_price'] = round(discounted_unit_price, 2)
+            prod['discounted_total_price'] = round(discounted_total_price, 2)
+            discounted_products.append(prod)
+
+            # Real-time update in MongoDB
+            try:
+                cart_item = user_cart_item.objects.get(
+                    user_id=buyer_id,
+                    product_id=product_id,
+                    status="Pending"
+                )
+                cart_item.update(
+                    set__discount_rate=float(manual_discount_rate) if manual_discount_rate is not None else 0.0,
+                    set__discounted_unit_price=round(discounted_unit_price, 2),
+                    set__discounted_total_price=round(discounted_total_price, 2)
+                )
+            except user_cart_item.DoesNotExist:
+                # No matching cart item — skip
+                continue
 
         return JsonResponse({
             "status": True,
@@ -1145,6 +1223,7 @@ def applyBuyerDiscountq(request):
 
     except Exception as e:
         return JsonResponse({"status": False, "error": str(e)}, status=500)
+
 
 @csrf_exempt
 @api_view(['GET'])

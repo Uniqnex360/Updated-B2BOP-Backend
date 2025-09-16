@@ -222,7 +222,9 @@ class user_cart_item(Document):
     unit_price = fields.FloatField(required=True) 
     product_status = fields.StringField(choices=["Shipped", "Pending"], default="Pending")
 
-
+    # 🔹 Add these new fields for discount support:
+    seller_discount = fields.FloatField(default=0.0)  # percentage
+    discounted_price = fields.FloatField(default=0.0) # total price after discount   # total price after discount
 
 class order(Document):
     order_id = fields.StringField()
