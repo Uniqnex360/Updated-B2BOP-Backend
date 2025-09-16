@@ -994,6 +994,8 @@ from django.http import JsonResponse
 from bson import ObjectId
 from datetime import datetime
 import json
+# Define the page size for pagination
+PAGE_SIZE = 10
 
 @csrf_exempt
 def obtainDealerDetails(request):
@@ -1045,6 +1047,7 @@ def obtainDealerDetails(request):
 
     # ---------------- GET: Fetch user details and orders ----------------
     user_id = request.GET.get('user_id')
+    page = int(request.GET.get('page', 1))
     if not user_id:
         return JsonResponse({"status": False, "message": "user_id is required"}, status=400)
 
@@ -1140,15 +1143,30 @@ def obtainDealerDetails(request):
         {"$sort": {"id": -1}}
     ]
 
+    # Count total orders
+    total_orders = order.objects.aggregate(*order_pipeline)
+    total_orders_count = len(list(total_orders))
+
+    # Apply pagination
+    order_pipeline.append({"$skip": (page - 1) * PAGE_SIZE})
+    order_pipeline.append({"$limit": PAGE_SIZE})
+
     order_list = list(order.objects.aggregate(*order_pipeline))
     data['order_list'] = order_list
+
+    # Pagination metadata
+    data['pagination'] = {
+        'page': page,
+        'page_size': PAGE_SIZE,
+        'total_orders': total_orders_count,
+        'total_pages': -(-total_orders_count // PAGE_SIZE)  # Ceiling division
+    }
 
     return JsonResponse({
         "status": True,
         "message": "success",
         "data": data
     }, safe=False)
- 
 
 from django.http import JsonResponse
 from rest_framework.parsers import JSONParser
