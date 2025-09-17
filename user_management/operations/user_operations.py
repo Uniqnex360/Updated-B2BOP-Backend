@@ -1138,6 +1138,53 @@ def update_seller_discount(request):
     except Exception as e:
         return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500)
 
+@csrf_exempt
+def remove_seller_discount(request):
+    """
+    POST: Remove seller discount for a cart item.
+    Body: {
+        "cart_item_id": "64d9..."
+    }
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    try:
+        payload = json.loads(request.body)
+        cart_item_id = payload.get("cart_item_id")
+
+        if not cart_item_id:
+            return JsonResponse({"status": False, "message": "cart_item_id is required"}, status=400)
+
+        try:
+            cart_item_oid = ObjectId(cart_item_id)
+        except Exception:
+            return JsonResponse({"status": False, "message": "Invalid cart_item_id format"}, status=400)
+
+        cart_item = user_cart_item.objects(id=cart_item_oid).first()
+        if not cart_item:
+            return JsonResponse({"status": False, "message": "Cart item not found"}, status=404)
+
+        # Remove discount
+        cart_item.seller_discount = 0.0
+        cart_item.discounted_price = cart_item.price  # No discount, so discounted price = original price
+        cart_item.updated_date = datetime.now()
+        cart_item.save()
+
+        return JsonResponse({
+            "status": True,
+            "message": "Seller discount removed successfully",
+            "data": {
+                "cart_item_id": str(cart_item.id),
+                "seller_discount": cart_item.seller_discount,
+                "discounted_price": cart_item.discounted_price
+            }
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"status": False, "message": "Invalid JSON payload"}, status=400)
+    except Exception as e:
+        return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500)
 
 @csrf_exempt
 def obtainDealerDetails(request):
