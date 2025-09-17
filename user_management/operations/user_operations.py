@@ -1184,7 +1184,7 @@ def remove_seller_discount(request):
     except json.JSONDecodeError:
         return JsonResponse({"status": False, "message": "Invalid JSON payload"}, status=400)
     except Exception as e:
-        return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500)
+        return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500) 
 
 @csrf_exempt
 def obtainDealerDetails(request):
@@ -1304,76 +1304,6 @@ def obtainDealerDetails(request):
 from django.http import JsonResponse
 from rest_framework.parsers import JSONParser
 from user_management.models import user_cart_item
-
-@csrf_exempt
-def applyBuyerDiscountq(request):
-    """
-    POST API where seller can set manual discounts for each product for a buyer.
-    Request should include buyer_id, seller_id, and products array with discount info.
-    Applies discount in real-time to user_cart_item collection.
-    """
-    if request.method != "POST":
-        return JsonResponse({"status": False, "error": "POST method required"}, status=405)
-
-    try:
-        json_request = JSONParser().parse(request)
-
-        buyer_id = json_request.get("buyer_id")
-        seller_id = json_request.get("seller_id")
-        products = json_request.get("products", [])
-
-        if not buyer_id or not seller_id or not products:
-            return JsonResponse({"status": False, "error": "buyer_id, seller_id and products are required"}, status=400)
-
-        discounted_products = []
-
-        for prod in products:
-            product_id = prod.get('product_id')
-            quantity = prod.get('quantity', 0)
-            unit_price = prod.get('price', 0.0)
-
-            manual_discount_rate = prod.get('discount_rate')    # % off e.g. 0.10
-            manual_discount_price = prod.get('discount_price')  # flat off per unit
-
-            if manual_discount_rate is not None:
-                discounted_unit_price = unit_price * (1 - float(manual_discount_rate))
-            elif manual_discount_price is not None:
-                discounted_unit_price = unit_price - float(manual_discount_price)
-            else:
-                discounted_unit_price = unit_price
-
-            discounted_total_price = discounted_unit_price * quantity
-
-            prod['discounted_unit_price'] = round(discounted_unit_price, 2)
-            prod['discounted_total_price'] = round(discounted_total_price, 2)
-            discounted_products.append(prod)
-
-            # Real-time update in MongoDB
-            try:
-                cart_item = user_cart_item.objects.get(
-                    user_id=buyer_id,
-                    product_id=product_id,
-                    status="Pending"
-                )
-                cart_item.update(
-                    set__discount_rate=float(manual_discount_rate) if manual_discount_rate is not None else 0.0,
-                    set__discounted_unit_price=round(discounted_unit_price, 2),
-                    set__discounted_total_price=round(discounted_total_price, 2)
-                )
-            except user_cart_item.DoesNotExist:
-                # No matching cart item — skip
-                continue
-
-        return JsonResponse({
-            "status": True,
-            "message": "Manual discount applied successfully",
-            "buyer_id": buyer_id,
-            "seller_id": seller_id,
-            "data": discounted_products
-        }, status=200)
-
-    except Exception as e:
-        return JsonResponse({"status": False, "error": str(e)}, status=500)
 
 
 @csrf_exempt

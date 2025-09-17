@@ -1055,6 +1055,80 @@ def obtainProductsList(request):
 
     return product_list
 
+
+
+@csrf_exempt
+def buyerDiscountPBCT(request):
+    """
+    POST: Lightweight endpoint for product summary.
+    Returns product_name, brand_name, category_name (end-level), total_order (null for now)
+    Supports search by product_name, brand_name, category_name.
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    json_request = JSONParser().parse(request)
+    manufacture_unit_id = json_request.get('manufacture_unit_id')
+    search = json_request.get('search', '').strip()  # optional search term
+
+    if not manufacture_unit_id:
+        return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
+
+    base_match = {'manufacture_unit_id': ObjectId(manufacture_unit_id)}
+
+    pipeline = [
+        {"$match": base_match},
+        {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "category_ins"
+            }
+        },
+        {"$unwind": {"path": "$category_ins", "preserveNullAndEmptyArrays": True}},
+        {
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }
+        },
+        {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "product_name": "$product_name",
+                "brand_name": {"$ifNull": ["$brand_ins.name", "$brand_name"]},
+                "category_name": {"$ifNull": ["$category_ins.name", "N/A"]},
+                "total_order": None
+            }
+        }
+    ]
+
+    # 🔹 Add search filter stage only if search is given
+    if search:
+        regex = {"$regex": search, "$options": "i"}  # case-insensitive
+        pipeline.append({
+            "$match": {
+                "$or": [
+                    {"product_name": regex},
+                    {"brand_name": regex},
+                    {"category_name": regex}
+                ]
+            }
+        })
+
+    pipeline.append({"$sort": {"product_name": 1}})
+
+    product_summary = list(product.objects.aggregate(pipeline))
+    return JsonResponse(product_summary, safe=False)
+
+
+
+
 @csrf_exempt
 def obtainProductsListAutoSuggestion(request):
     """
@@ -1551,70 +1625,6 @@ def obtainProductsListAutoSuggestionForDealer(request):
         print("Error in dealer auto suggestion:", str(e))
         return JsonResponse({"data": [], "message": "An error occurred", "status": False})
 
-
-MAX_DISCOUNT = 25  # Maximum discount allowed
-
-@csrf_exempt
-def applyBuyerDiscount(request):
-    if request.method != 'POST':
-        return JsonResponse({"status": False, "error": "Only POST requests are allowed"}, status=405)
-
-    try:
-        json_request = JSONParser().parse(request)
-    except Exception:
-        return JsonResponse({"status": False, "error": "Invalid JSON"}, status=400)
-
-    buyer_ids = json_request.get('buyer_ids')
-    product_id = json_request.get('product_id')
-    quantity = json_request.get('quantity')
-
-    # Validate required fields
-    if not buyer_ids or not product_id or not quantity:
-        return JsonResponse({
-            "status": False,
-            "error": "buyer_ids, product_id, and quantity are required"
-        }, status=400)
-
-    if not isinstance(quantity, int) or quantity <= 0:
-        return JsonResponse({"status": False, "error": "Quantity must be a positive integer"}, status=400)
-
-    # Fetch product details
-    product_data = DatabaseModel.get_document(product.objects, {"id": product_id}, ["list_price", "discount"])
-    if not product_data:
-        return JsonResponse({"status": False, "error": "Product not found"}, status=404)
-
-    list_price = Decimal(product_data.list_price)
-    results = []
-
-    # Loop through each buyer
-    for buyer_id in buyer_ids:
-        buyer = DatabaseModel.get_document(user.objects, {"id": buyer_id}, ["credit_terms"])
-        if not buyer:
-            results.append({"buyer_id": buyer_id, "status": False, "error": "Buyer not found"})
-            continue
-
-        # Calculate discount based on quantity
-        discount_pct = get_quantity_discount(quantity)
-
-        # Add extra discount based on credit terms
-        if getattr(buyer, 'credit_terms', None) == "60_days":
-            discount_pct += 2
-
-        # Enforce maximum discount
-        discount_pct = min(discount_pct, MAX_DISCOUNT)
-
-        # Calculate final price
-        discounted_price = list_price * (Decimal('1') - Decimal(discount_pct) / Decimal('100'))
-
-        results.append({
-            "buyer_id": buyer_id,
-            "status": True,
-            "original_price": float(list_price),
-            "discount_percentage": float(discount_pct),
-            "final_price": float(discounted_price)
-        })
-
-    return JsonResponse({"results": results})
 
 
 @csrf_exempt
