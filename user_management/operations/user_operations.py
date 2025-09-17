@@ -994,70 +994,171 @@ from django.http import JsonResponse
 from bson import ObjectId
 from datetime import datetime
 import json
-# Define the page size for pagination
-PAGE_SIZE = 10
+
+@csrf_exempt
+def update_seller_discount(request):
+    """
+    POST: Update seller discount for a cart item and return product details, plus all products and brands for the user.
+    Body: {
+        "cart_item_id": "64d9...",
+        "seller_discount": 10.0   # optional if you want to override automatic rules
+    }
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    try:
+        payload = json.loads(request.body)
+        cart_item_id = payload.get("cart_item_id")
+        manual_discount = payload.get("seller_discount")  # optional manual override
+
+        if not cart_item_id:
+            return JsonResponse({"status": False, "message": "cart_item_id is required"}, status=400)
+
+        try:
+            cart_item_oid = ObjectId(cart_item_id)
+        except Exception:
+            return JsonResponse({"status": False, "message": "Invalid cart_item_id format"}, status=400)
+
+        # fetch cart item
+        cart_item = user_cart_item.objects(id=cart_item_oid).first()
+        if not cart_item:
+            return JsonResponse({"status": False, "message": "Cart item not found"}, status=404)
+
+        quantity = cart_item.quantity
+        unit_price = cart_item.unit_price
+        total_price = quantity * unit_price
+
+        # Get product + brand for rule checks
+        product_obj = cart_item.product_id
+        product_id = str(product_obj.id) if product_obj else None
+        brand_name = product_obj.brand_name if product_obj else None
+
+        # -------- RULE LOGIC --------
+        # you can configure these dicts somewhere else or fetch from DB
+        product_discounts = {
+            "68c3cd29c5eb6abbcda29345": 12.0,
+            "68c3cd29c5eb6abbcda29346": 8.0,
+        }
+        brand_discounts = {
+            "Thorlabs": 10.0,
+            "Masterfix": 5.0,
+        }
+
+        auto_discount = 0.0
+        # quantity based
+        if quantity >= 100:
+            auto_discount = max(auto_discount, 10.0)
+        elif quantity >= 50:
+            auto_discount = max(auto_discount, 5.0)
+
+        # total amount based
+        if total_price >= 5000:
+            auto_discount = max(auto_discount, 15.0)
+        elif total_price >= 1000:
+            auto_discount = max(auto_discount, 5.0)
+
+        # product based
+        if product_id in product_discounts:
+            auto_discount = max(auto_discount, product_discounts[product_id])
+
+        # brand based
+        if brand_name in brand_discounts:
+            auto_discount = max(auto_discount, brand_discounts[brand_name])
+
+        # If manual discount given in request, override auto rules:
+        seller_discount = float(manual_discount) if manual_discount is not None else auto_discount
+
+        # -------- SAVE TO DB --------
+        cart_item.seller_discount = seller_discount
+        cart_item.price = total_price  # original total price
+        cart_item.discounted_price = total_price - (total_price * (seller_discount / 100.0))
+        cart_item.updated_date = datetime.now()
+        cart_item.save()
+
+        # product info for response
+        product_data = {}
+        if product_obj:
+            product_data = {
+                "product_id": str(product_obj.id),
+                "product_name": product_obj.product_name,
+                "brand_name": product_obj.brand_name,
+                "currency": product_obj.currency,
+                "primary_image": product_obj.images[0] if product_obj.images else "",
+            }
+
+        # fetch all products/brands for user
+        pipeline = [
+            {"$match": {"user_id": cart_item.user_id.id if cart_item.user_id else None}},
+            {
+                "$lookup": {
+                    "from": "product",
+                    "localField": "product_id",
+                    "foreignField": "_id",
+                    "as": "product_info"
+                }
+            },
+            {"$unwind": {"path": "$product_info", "preserveNullAndEmptyArrays": True}},
+            {
+                "$group": {
+                    "_id": None,
+                    "products": {"$addToSet": {
+                        "product_id": {"$toString": "$product_info._id"},
+                        "product_name": "$product_info.product_name"
+                    }},
+                    "brands": {"$addToSet": "$product_info.brand_name"}
+                }
+            }
+        ]
+        result = list(user_cart_item.objects.aggregate(pipeline))
+        products = []
+        brands = []
+        if result:
+            products = [p for p in result[0].get("products", []) if p.get("product_id")]
+            brands = [b for b in result[0].get("brands", []) if b]
+
+        return JsonResponse({
+            "status": True,
+            "message": "Seller discount updated successfully",
+            "data": {
+                "cart_item_id": str(cart_item.id),
+                "seller_discount": cart_item.seller_discount,
+                "discounted_price": cart_item.discounted_price,
+                "unit_price": unit_price,
+                "quantity": quantity,
+                "total_price": total_price,
+                "product": product_data,
+                "all_products": products,
+                "all_brands": brands
+            }
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"status": False, "message": "Invalid JSON payload"}, status=400)
+    except Exception as e:
+        return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500)
+
 
 @csrf_exempt
 def obtainDealerDetails(request):
-    data = dict()
+    """
+    GET: Fetch user details and their orders + discounts
+    """
+    if request.method != "GET":
+        return JsonResponse({"status": False, "message": "Only GET allowed"}, status=405)
 
-    # ---------------- POST: Update seller discount ----------------
-    if request.method == "POST":
-        try:
-            payload = json.loads(request.body)
-            cart_item_id = payload.get("cart_item_id")
-            seller_discount = float(payload.get("seller_discount", 0.0))
-
-            if not cart_item_id:
-                return JsonResponse({"status": False, "message": "cart_item_id is required"}, status=400)
-
-            # Safely convert to ObjectId
-            try:
-                cart_item_oid = ObjectId(cart_item_id)
-            except Exception:
-                return JsonResponse({"status": False, "message": "Invalid cart_item_id format"}, status=400)
-
-            # Fetch cart item
-            cart_item = user_cart_item.objects(id=cart_item_oid).first()
-            if not cart_item:
-                return JsonResponse({"status": False, "message": "Cart item not found"}, status=404)
-
-            # Update discount
-            total_price = cart_item.quantity * cart_item.unit_price
-            cart_item.seller_discount = seller_discount
-            cart_item.discounted_price = total_price - (total_price * (seller_discount / 100.0))
-            cart_item.price = total_price  # keep original total price
-            cart_item.updated_date = datetime.now()
-            cart_item.save()
-
-            return JsonResponse({
-                "status": True,
-                "message": "Seller discount updated successfully",
-                "data": {
-                    "cart_item_id": str(cart_item.id),
-                    "seller_discount": cart_item.seller_discount,
-                    "discounted_price": cart_item.discounted_price
-                }
-            }, safe=False)
-
-        except json.JSONDecodeError:
-            return JsonResponse({"status": False, "message": "Invalid JSON payload"}, status=400)
-        except Exception as e:
-            return JsonResponse({"status": False, "message": f"Error: {str(e)}"}, status=500)
-
-    # ---------------- GET: Fetch user details and orders ----------------
     user_id = request.GET.get('user_id')
-    page = int(request.GET.get('page', 1))
     if not user_id:
         return JsonResponse({"status": False, "message": "user_id is required"}, status=400)
 
-    # Safely convert user_id
     try:
         user_oid = ObjectId(user_id)
     except Exception:
         return JsonResponse({"status": False, "message": "Invalid user_id format"}, status=400)
 
-    # Fetch user details
+    data = {}
+
+    # ---------------- USER DETAILS ---------------- #
     user_pipeline = [
         {"$match": {"_id": user_oid}},
         {
@@ -1077,7 +1178,7 @@ def obtainDealerDetails(request):
     user_obj = list(user.objects.aggregate(*user_pipeline))
     data['user_details'] = user_obj[0] if user_obj else {}
 
-    # Fetch orders and cart items with discounts
+    # ---------------- ORDERS + CART ITEMS ---------------- #
     order_pipeline = [
         {"$match": {"customer_id": user_oid}},
         {
@@ -1113,22 +1214,23 @@ def obtainDealerDetails(request):
                 "order_id": {"$first": "$order_id"},
                 "amount": {"$first": "$amount"},
                 "currency": {"$first": "$currency"},
-                "product_list": {
-                    "$push": {
-                        "product_id": {"$toString": "$products_ins._id"},
-                        "product_name": "$products_ins.product_name",
-                        "primary_image": {"$first": "$products_ins.images"},
-                        "sku_number": "$products_ins.sku_number_product_code_item_number",
-                        "mpn_number": "$products_ins.mpn",
-                        "brand_name": "$products_ins.brand_name",
-                        "price": {"$ifNull": ["$cart_ins.unit_price", 0.0]},
-                        "currency": "$products_ins.currency",
-                        "quantity": "$cart_ins.quantity",
-                        "total_price": "$cart_ins.price",
-                        "seller_discount": {"$ifNull": ["$cart_ins.seller_discount", 0.0]},
-                        "discounted_price": {"$ifNull": ["$cart_ins.discounted_price", 0.0]}
-                    }
-                }
+"product_list": {
+    "$push": {
+        "cart_item_id": {"$toString": "$cart_ins._id"},  # <-- Add this line
+        "product_id": {"$toString": "$products_ins._id"},
+        "product_name": "$products_ins.product_name",
+        "primary_image": {"$first": "$products_ins.images"},
+        "sku_number": "$products_ins.sku_number_product_code_item_number",
+        "mpn_number": "$products_ins.mpn",
+        "brand_name": "$products_ins.brand_name",
+        "price": {"$ifNull": ["$cart_ins.unit_price", 0.0]},
+        "currency": "$products_ins.currency",
+        "quantity": "$cart_ins.quantity",
+        "total_price": "$cart_ins.price",
+        "seller_discount": {"$ifNull": ["$cart_ins.seller_discount", 0.0]},
+        "discounted_price": {"$ifNull": ["$cart_ins.discounted_price", 0.0]}
+    }
+}
             }
         },
         {
@@ -1143,24 +1245,8 @@ def obtainDealerDetails(request):
         {"$sort": {"id": -1}}
     ]
 
-    # Count total orders
-    total_orders = order.objects.aggregate(*order_pipeline)
-    total_orders_count = len(list(total_orders))
-
-    # Apply pagination
-    order_pipeline.append({"$skip": (page - 1) * PAGE_SIZE})
-    order_pipeline.append({"$limit": PAGE_SIZE})
-
     order_list = list(order.objects.aggregate(*order_pipeline))
     data['order_list'] = order_list
-
-    # Pagination metadata
-    data['pagination'] = {
-        'page': page,
-        'page_size': PAGE_SIZE,
-        'total_orders': total_orders_count,
-        'total_pages': -(-total_orders_count // PAGE_SIZE)  # Ceiling division
-    }
 
     return JsonResponse({
         "status": True,
