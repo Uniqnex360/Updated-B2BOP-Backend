@@ -1268,7 +1268,73 @@ def buyerDiscountPBCT(request):
         "level1_categories": level1_categories,
         "end_categories": end_categories,
         "products": product_summary
+        
     })
+
+@csrf_exempt
+def buyerProductDiscount(request):
+    """
+    POST: Product summary for a manufacturer and buyer.
+    Returns product_name and total_order (buyer specific)
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    data = JSONParser().parse(request)
+    manufacture_unit_id = data.get('manufacture_unit_id')
+    buyer_id = data.get('buyer_id')
+    search = data.get('search', '').strip()
+
+    if not manufacture_unit_id or not buyer_id:
+        return JsonResponse({"status": False, "message": "manufacture_unit_id and buyer_id are required"}, status=400)
+
+    try:
+        manufacture_unit_oid = ObjectId(manufacture_unit_id)
+        buyer_oid = ObjectId(buyer_id)
+    except:
+        return JsonResponse({"status": False, "message": "Invalid ids"}, status=400)
+
+    pipeline = [
+        {"$match": {"manufacture_unit_id": manufacture_unit_oid}},
+
+        # join with user_cart_item to compute buyer-specific total_order
+        {"$lookup": {
+            "from": "user_cart_item",
+            "let": {"p_id": "$_id"},
+            "pipeline": [
+                {"$match": {
+                    "$expr": {"$and": [
+                        {"$eq": ["$product_id", "$$p_id"]},
+                        {"$eq": ["$user_id", buyer_oid]}
+                    ]}
+                }},
+                {"$group": {
+                    "_id": None,
+                    "total_qty": {"$sum": "$quantity"}
+                }}
+            ],
+            "as": "buyer_orders"
+        }},
+        {"$unwind": {"path": "$buyer_orders", "preserveNullAndEmptyArrays": True}},
+
+        {"$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "product_name": 1,
+            "total_order": "$buyer_orders.total_qty"
+        }}
+    ]
+
+    if search:
+        regex = {"$regex": search, "$options": "i"}
+        pipeline.append({"$match": {"product_name": regex}})
+
+    pipeline.append({"$sort": {"product_name": 1}})
+
+    product_summary = list(product.objects.aggregate(pipeline))
+    return JsonResponse(product_summary, safe=False)
+
+
 
 @csrf_exempt
 def add_discount(request):

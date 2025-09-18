@@ -12,7 +12,7 @@ from user_management.operations.order_and_purchase_operations import (
 from user_management.operations.user_operations import createORUpdateManufactureUnit, remove_seller_discount,dealer_order_product_brand_autosuggest, obtainManufactureUnitList, obtainManufactureUnitDetails, obtainRolesForCreatingUser, checkEmailExistOrNot, createORUpdateUser, loginUser,createUser, generateUserName, validateEmail, obtainUserListForManufactureUnit, obtainUserDetailsForProfile, updateUserProfile, deleteBuyer, obtainAllMailTemplateForManufactureUnit, updateMailTemplate, obtainDealerDetails, obtainDashboardDetailsForManufactureAdmin, manufactureDashboardEachDealerOrderValue, deleteAddress, deleteBankDetails, obtainDashboardDetailsForDealer, obtainIndustryList, updateIndustryForManufactureUnit, obtainIndustryForManufactureUnit, createIndustry, forgotPassword, changePassword, topSellingProductsForDashBoard, updateLogo, getManufactureUnitLogo,update_seller_discount
 
 from user_management.operations.products_operations import obtainProductsListAutoSuggestion,obtainProductsListAutoSuggestionForDealer
-from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new
+from user_management.operations.products_operations import obtainProductCategoryList,buyerProductDiscount,   obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new
 from user_management.operations.products_operations import getIndustryCategoryBrand,get_discounts,add_discount,seller_dashboard_view,buyerDiscountPBCT
 from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails,moveCartItemsToWishlist
 
@@ -79,6 +79,7 @@ path('seller_dashboard_kpis/', seller_dashboard_view, name='seller_dashboard_kpi
     path('obtainProductCategoryList/',obtainProductCategoryList,name="obtainProductCategoryList"),
     path('obtainProductsList/',obtainProductsList,name="obtainProductsList"),
     path('buyerDiscountPBCT/', buyerDiscountPBCT, name='buyerDiscountPBCT'),
+    path('buyerProductDiscount/', buyerProductDiscount, name='buyerProductDiscount'),
     path('obtainProductsListAutoSuggestion/', obtainProductsListAutoSuggestion, name="obtainProductsListAutoSuggestion"),
     path('obtainbrandList/',obtainbrandList,name="obtainbrandList"),
     path('createOrUpdateUserCartItem/',createOrUpdateUserCartItem,name="createOrUpdateUserCartItem"),
