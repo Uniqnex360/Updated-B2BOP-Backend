@@ -1055,97 +1055,65 @@ def obtainProductsList(request):
 
     return product_list
 
-
-
 @csrf_exempt
 def buyerDiscountPBCT(request):
-    """
-    POST: Product summary for a manufacturer and buyer.
-    Returns product_name, brand_name, category_name, total_order (buyer specific)
-    """
     if request.method != "POST":
         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
 
     json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request.get('manufacture_unit_id')
-    buyer_id = json_request.get('buyer_id')   # 👈 new
     search = json_request.get('search', '').strip()
 
-    if not manufacture_unit_id or not buyer_id:
-        return JsonResponse({"status": False, "message": "manufacture_unit_id and buyer_id are required"}, status=400)
+    if not manufacture_unit_id:
+        return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
 
-    try:
-        manufacture_unit_oid = ObjectId(manufacture_unit_id)
-        buyer_oid = ObjectId(buyer_id)
-    except:
-        return JsonResponse({"status": False, "message": "Invalid ids"}, status=400)
-
-    # base filter
-    base_match = {'manufacture_unit_id': manufacture_unit_oid}
+    base_match = {'manufacture_unit_id': ObjectId(manufacture_unit_id)}
 
     pipeline = [
         {"$match": base_match},
-
-        # lookups
-        {"$lookup": {
-            "from": "product_category",
-            "localField": "category_id",
-            "foreignField": "_id",
-            "as": "category_ins"
-        }},
+        {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "category_ins"
+            }
+        },
         {"$unwind": {"path": "$category_ins", "preserveNullAndEmptyArrays": True}},
-
-        {"$lookup": {
-            "from": "brand",
-            "localField": "brand_id",
-            "foreignField": "_id",
-            "as": "brand_ins"
-        }},
+        {
+            "$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }
+        },
         {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
-
-        # 👇 join with orders/cart to compute buyer-specific total_order
-        {"$lookup": {
-            "from": "user_cart_item",        # your orders or cart collection
-            "let": {"p_id": "$_id"},
-            "pipeline": [
-                {"$match": {
-                    "$expr": {"$and": [
-                        {"$eq": ["$product_id", "$$p_id"]},
-                        {"$eq": ["$user_id", buyer_oid]}
-                    ]}
-                }},
-                {"$group": {
-                    "_id": None,
-                    "total_qty": {"$sum": "$quantity"}  # or total_price
-                }}
-            ],
-            "as": "buyer_orders"
-        }},
-        {"$unwind": {"path": "$buyer_orders", "preserveNullAndEmptyArrays": True}},
-
-        {"$project": {
-            "_id": 0,
-            "id": {"$toString": "$_id"},
-            "product_name": 1,
-            "brand_name": {"$ifNull": ["$brand_ins.name", "$brand_name"]},
-            "category_name": {"$ifNull": ["$category_ins.name", "N/A"]},
-            "total_order": "$buyer_orders.total_qty"  # 👈 buyer specific total
-        }}
     ]
 
+    # apply search
     if search:
         regex = {"$regex": search, "$options": "i"}
         pipeline.append({"$match": {"$or": [
             {"product_name": regex},
-            {"brand_name": regex},
-            {"category_name": regex}
+            {"brand_ins.name": regex},
+            {"category_ins.name": regex}
         ]}})
 
+    # final projection — no total_order here
+    pipeline.append({
+        "$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "product_name": "$product_name",
+            "brand_name": {"$ifNull": ["$brand_ins.name", "$brand_name"]},
+            "category_name": {"$ifNull": ["$category_ins.name", "N/A"]}
+        }
+    })
     pipeline.append({"$sort": {"product_name": 1}})
 
     product_summary = list(product.objects.aggregate(pipeline))
     return JsonResponse(product_summary, safe=False)
-
 
 
 @csrf_exempt
