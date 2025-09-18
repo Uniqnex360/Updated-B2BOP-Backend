@@ -1271,26 +1271,33 @@ def buyerDiscountPBCT(request):
         
     })
 
-
 @csrf_exempt
 def buyerProductDiscount(request):
     """
-    POST: Returns only product_name for a manufacturer and buyer
+    POST: Returns only product names for a manufacturer (with optional search)
+    - manufacture_unit_id (required)
+    - buyer_id (required just for validation)
+    - search (optional)
+    - page (optional, default=1)
+    - page_size (optional, default=50)
     """
     if request.method != "POST":
         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
 
     data = JSONParser().parse(request)
     manufacture_unit_id = data.get('manufacture_unit_id')
-    buyer_id = data.get('buyer_id')  # still validating, even if unused
+    buyer_id = data.get('buyer_id')  # still validated even if unused here
     search = data.get('search', '').strip()
+    page = int(data.get("page", 1))
+    page_size = int(data.get("page_size", 50))
+    skip = (page - 1) * page_size
 
     if not manufacture_unit_id or not buyer_id:
         return JsonResponse({"status": False, "message": "manufacture_unit_id and buyer_id are required"}, status=400)
 
     try:
         manufacture_unit_oid = ObjectId(manufacture_unit_id)
-        ObjectId(buyer_id)  # just to ensure it's valid
+        ObjectId(buyer_id)  # validate buyer_id format
     except:
         return JsonResponse({"status": False, "message": "Invalid ids"}, status=400)
 
@@ -1302,12 +1309,20 @@ def buyerProductDiscount(request):
         regex = {"$regex": search, "$options": "i"}
         pipeline.append({"$match": {"product_name": regex}})
 
-    pipeline.append({"$project": {"_id": 0, "product_name": 1}})
-    pipeline.append({"$sort": {"product_name": 1}})
+    pipeline.extend([
+        {"$project": {"_id": 0, "product_name": 1}},
+        {"$sort": {"product_name": 1}},
+        {"$skip": skip},
+        {"$limit": page_size}
+    ])
 
+    # run aggregation
     products = list(product.objects.aggregate(pipeline))
-    return JsonResponse(products, safe=False)
 
+    # flatten into simple string list
+    product_names = [p["product_name"] for p in products]
+
+    return JsonResponse(product_names, safe=False)
 
 
 @csrf_exempt
