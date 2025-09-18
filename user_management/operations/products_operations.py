@@ -1055,18 +1055,167 @@ def obtainProductsList(request):
 
     return product_list
 
+from bson import ObjectId
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.parsers import JSONParser
+from mongoengine.errors import DoesNotExist
+
 @csrf_exempt
 def buyerDiscountPBCT(request):
+    """
+    POST with:
+      - manufacture_unit_id (required)
+      - search (optional)
+      - product_category_id (optional)
+      - industry_id (optional)
+
+    Response includes:
+      - level1_categories
+      - end_categories
+      - products (if no product_category_id is provided)
+    """
     if request.method != "POST":
         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
 
     json_request = JSONParser().parse(request)
     manufacture_unit_id = json_request.get('manufacture_unit_id')
     search = json_request.get('search', '').strip()
+    product_category_id = json_request.get('product_category_id')
+    industry_id_str = json_request.get('industry_id')
 
     if not manufacture_unit_id:
         return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
 
+    # -------------------------
+    # Fetch Level 1 categories
+    # -------------------------
+    match_level1 = {
+        "manufacture_unit_id_str": manufacture_unit_id,
+        "level": 1
+    }
+    if industry_id_str:
+        match_level1["industry_id_str"] = industry_id_str
+
+    pipeline_level1 = [
+        {"$match": match_level1},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": 1,
+                "level": 1,
+                "is_parent": {
+                    "$cond": {
+                        "if": {"$ne": ["$child_categories", []]},
+                        "then": True,
+                        "else": False
+                    }
+                }
+            }
+        },
+        {"$sort": {"name": 1}}
+    ]
+    level1_categories = list(product_category.objects.aggregate(*pipeline_level1))
+
+    # -------------------------
+    # Fetch all end-level categories
+    # -------------------------
+    match_end = {
+        "manufacture_unit_id_str": manufacture_unit_id,
+        "end_level": True
+    }
+    if industry_id_str:
+        match_end["industry_id_str"] = industry_id_str
+
+    pipeline_end = [
+        {"$match": match_end},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": 1,
+                "level": 1,
+                "is_parent": {"$literal": False},
+                "breadcrumb": 1
+            }
+        },
+        {"$sort": {"name": 1}}
+    ]
+    end_categories = list(product_category.objects.aggregate(*pipeline_end))
+
+    # -------------------------
+    # If product_category_id is provided → return categories only
+    # -------------------------
+    if product_category_id:
+        try:
+            category_oid = ObjectId(product_category_id)
+        except Exception:
+            return JsonResponse({"status": False, "message": "Invalid product_category_id"}, status=400)
+
+        match_starting_category = {
+            "id": category_oid,
+            "manufacture_unit_id_str": manufacture_unit_id
+        }
+        if industry_id_str:
+            match_starting_category["industry_id_str"] = industry_id_str
+
+        try:
+            starting_category = product_category.objects.get(**match_starting_category)
+        except DoesNotExist:
+            return JsonResponse({"status": False, "message": "Category does not exist"}, status=404)
+
+        if starting_category.end_level:
+            category_list = [{
+                "id": str(starting_category.id),
+                "name": starting_category.name,
+                "level": starting_category.level,
+                "is_parent": False
+            }]
+        else:
+            pipeline = [
+                {"$match": {"_id": category_oid}},
+                {
+                    "$graphLookup": {
+                        "from": "product_category",
+                        "startWith": "$_id",
+                        "connectFromField": "_id",
+                        "connectToField": "parent_category_id",
+                        "as": "descendants",
+                        "maxDepth": 10,
+                        "depthField": "depth"
+                    }
+                },
+                {"$unwind": "$descendants"},
+                {"$match": {"descendants.end_level": True}},
+                {
+                    "$match": {
+                        "descendants.manufacture_unit_id_str": manufacture_unit_id,
+                        **({"descendants.industry_id_str": industry_id_str} if industry_id_str else {})
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "id": {"$toString": "$descendants._id"},
+                        "name": "$descendants.name",
+                        "level": "$descendants.level",
+                        "is_parent": {"$literal": False}
+                    }
+                },
+                {"$sort": {"name": 1}}
+            ]
+            category_list = list(product_category.objects.aggregate(*pipeline))
+
+        return JsonResponse({
+            "status": True,
+            "level1_categories": level1_categories,
+            "end_categories": category_list
+        })
+
+    # -------------------------
+    # No product_category_id → return products
+    # -------------------------
     base_match = {'manufacture_unit_id': ObjectId(manufacture_unit_id)}
 
     pipeline = [
@@ -1091,16 +1240,16 @@ def buyerDiscountPBCT(request):
         {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
     ]
 
-    # apply search
     if search:
         regex = {"$regex": search, "$options": "i"}
-        pipeline.append({"$match": {"$or": [
-            {"product_name": regex},
-            {"brand_ins.name": regex},
-            {"category_ins.name": regex}
-        ]}})
+        pipeline.append({
+            "$match": {"$or": [
+                {"product_name": regex},
+                {"brand_ins.name": regex},
+                {"category_ins.name": regex}
+            ]}
+        })
 
-    # final projection — no total_order here
     pipeline.append({
         "$project": {
             "_id": 0,
@@ -1113,7 +1262,146 @@ def buyerDiscountPBCT(request):
     pipeline.append({"$sort": {"product_name": 1}})
 
     product_summary = list(product.objects.aggregate(pipeline))
-    return JsonResponse(product_summary, safe=False)
+
+    return JsonResponse({
+        "status": True,
+        "level1_categories": level1_categories,
+        "end_categories": end_categories,
+        "products": product_summary
+    })
+
+@csrf_exempt
+def add_discount(request):
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    data = json.loads(request.body)
+    
+    buyer = user.objects(id=data.get("buyer_id")).first()
+    if not buyer:
+        return JsonResponse({"status": False, "message": "Buyer not found"}, status=400)
+
+    discount_type = data.get("type")
+    discount_value = data.get("discount_value")
+    discount_kind = data.get("discount_type", "%")
+
+    new_discount = Discount(
+        buyer_id=buyer,
+        type=discount_type,
+        discount_value=discount_value,
+        discount_type=discount_kind
+    )
+
+    # Attach references based on type
+    if discount_type == "Product":
+        new_discount.product_id = product.objects(id=data.get("product_id")).first()
+        new_discount.min_quantity = data.get("min_quantity", 1)
+    elif discount_type == "Category":
+        new_discount.category_id = product_category.objects(id=data.get("category_id")).first()
+    elif discount_type == "Brand":
+        new_discount.brand_id = brand.objects(id=data.get("brand_id")).first()
+    elif discount_type == "Order":
+        new_discount.min_order_value = data.get("min_order_value", 0.0)
+
+    new_discount.save()
+    return JsonResponse({"status": True, "message": "Discount saved successfully."})
+
+@csrf_exempt
+def get_discounts(request, buyer_id):
+    discounts = Discount.objects(buyer_id=buyer_id)
+    discount_list = []
+
+    for d in discounts:
+        discount_list.append({
+            "id": str(d.id),
+            "type": d.type,
+            "product_id": str(d.product_id.id) if d.product_id else None,
+            "category_id": str(d.category_id.id) if d.category_id else None,
+            "brand_id": str(d.brand_id.id) if d.brand_id else None,
+            "discount_value": d.discount_value,
+            "discount_type": d.discount_type,
+            "min_quantity": d.min_quantity,
+            "min_order_value": d.min_order_value,
+        })
+
+    return JsonResponse({"status": True, "discounts": discount_list})
+
+
+
+@csrf_exempt
+def add_discount(request):
+    if request.method != "POST":
+        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"status": False, "message": "Invalid JSON body"}, status=400)
+
+    buyer = user.objects(id=data.get("buyer_id")).first()
+    if not buyer:
+        return JsonResponse({"status": False, "message": "Buyer not found"}, status=400)
+
+    discount_type = data.get("type")
+    discount_value = data.get("discount_value")
+    discount_kind = data.get("discount_type", "%")
+
+    new_discount = Discount(
+        buyer_id=buyer,
+        type=discount_type,
+        discount_value=discount_value,
+        discount_type=discount_kind
+    )
+
+    # variables for response names
+    brand_name = None
+    product_name = None
+    category_name = None
+
+    # Attach references based on type
+    if discount_type == "Product":
+        product_obj = product.objects(id=data.get("product_id")).first()
+        if not product_obj:
+            return JsonResponse({"status": False, "message": "Product not found"}, status=400)
+        new_discount.product_id = product_obj
+        new_discount.min_quantity = data.get("min_quantity", 1)
+        product_name = getattr(product_obj, "product_name", None)
+
+    elif discount_type == "Category":
+        category_obj = product_category.objects(id=data.get("category_id")).first()
+        if not category_obj:
+            return JsonResponse({"status": False, "message": "Category not found"}, status=400)
+        new_discount.category_id = category_obj
+        category_name = getattr(category_obj, "name", None)
+
+    elif discount_type == "Brand":
+        brand_obj = brand.objects(id=data.get("brand_id")).first()
+        if not brand_obj:
+            return JsonResponse({"status": False, "message": "Brand not found"}, status=400)
+        new_discount.brand_id = brand_obj
+        brand_name = getattr(brand_obj, "name", None)
+
+    elif discount_type == "Order":
+        new_discount.min_order_value = data.get("min_order_value", 0.0)
+
+    # Save the new discount
+    new_discount.save()
+
+    # build response
+    response_data = {
+        "status": True,
+        "message": "Discount saved successfully."
+    }
+
+    if product_name:
+        response_data["product_name"] = product_name
+    if brand_name:
+        response_data["brand_name"] = brand_name
+    if category_name:
+        response_data["category_name"] = category_name
+
+    return JsonResponse(response_data)
+
 
 
 @csrf_exempt

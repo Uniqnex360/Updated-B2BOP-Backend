@@ -381,3 +381,23 @@ class TrackingInfo(Document):
     tracking_number = fields.StringField(required=True)  # Carrier tracking number
     events = fields.ListField(fields.DictField())  # List of tracking events (e.g., "In Transit", "Delivered")
     last_updated = fields.DateTimeField()  # Timestamp for the last update
+    
+
+
+class Discount(Document):
+    buyer_id = fields.ReferenceField('user', required=True)
+    type = fields.StringField(choices=["Product", "Category", "Brand", "Order"], required=True)
+    
+    # References depending on discount type
+    product_id = fields.ReferenceField('product', null=True)
+    category_id = fields.ReferenceField('product_category', null=True)
+    brand_id = fields.ReferenceField('brand', null=True)
+
+    discount_value = fields.FloatField(required=True)
+    discount_type = fields.StringField(choices=["%", "$"], default="%")
+
+    min_quantity = fields.IntField(default=1)        # Only for product-level discount
+    min_order_value = fields.FloatField(default=0.0) # Only for order-level discount
+
+    created_at = fields.DateTimeField(default=datetime.now)
+    updated_at = fields.DateTimeField(default=datetime.now)

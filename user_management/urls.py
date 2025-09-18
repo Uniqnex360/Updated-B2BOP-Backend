@@ -13,7 +13,7 @@ from user_management.operations.user_operations import createORUpdateManufacture
 
 from user_management.operations.products_operations import obtainProductsListAutoSuggestion,obtainProductsListAutoSuggestionForDealer
 from user_management.operations.products_operations import obtainProductCategoryList, obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new
-from user_management.operations.products_operations import getIndustryCategoryBrand,seller_dashboard_view,buyerDiscountPBCT
+from user_management.operations.products_operations import getIndustryCategoryBrand,get_discounts,add_discount,seller_dashboard_view,buyerDiscountPBCT
 from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails,moveCartItemsToWishlist
 
 urlpatterns = [
@@ -101,6 +101,11 @@ path('seller_dashboard_kpis/', seller_dashboard_view, name='seller_dashboard_kpi
     path('upload_file/',upload_file,name="upload_file"),
     path('save_file/',save_file,name="save_file"),
     path('getColumnFormExcel/',getColumnFormExcel,name="getColumnFormExcel"),
+    
+    #discount
+    path('get_discounts/',get_discounts, name='get_discounts'),
+     path('add_discount/',add_discount, name='add_discount'),
+    
 
 
     #Dealer actions
