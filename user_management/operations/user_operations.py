@@ -1305,143 +1305,143 @@ from django.http import JsonResponse
 from rest_framework.parsers import JSONParser
 from user_management.models import user_cart_item
 
+# @csrf_exempt
+# def buyerDiscountPBCT(request):
+#     if request.method != "POST":
+#         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
+    
+#     json_request = JSONParser().parse(request)
+#     manufacture_unit_id = json_request.get('manufacture_unit_id')
+#     search = json_request.get('search', '').strip()
+    
+#     if not manufacture_unit_id:
+#         return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
+    
+#     base_match = {'manufacture_unit_id': ObjectId(manufacture_unit_id)}
+    
+#     pipeline = [
+#         {"$match": base_match},
+        
+#         # Lookup main category
+#         {
+#             "$lookup": {
+#                 "from": "product_category",
+#                 "localField": "category_id",
+#                 "foreignField": "_id",
+#                 "as": "category_ins"
+#             }
+#         },
+#         {"$unwind": {"path": "$category_ins", "preserveNullAndEmptyArrays": True}},
+        
+#         # Use GraphLookup to find all parent categories (similar to your obtainProductCategoryList)
+#         {
+#             "$graphLookup": {
+#                 "from": "product_category",
+#                 "startWith": "$category_ins.parent_category_id",
+#                 "connectFromField": "parent_category_id",
+#                 "connectToField": "_id",
+#                 "as": "parent_hierarchy",
+#                 "maxDepth": 10
+#             }
+#         },
+        
+#         # Add current category to the hierarchy and find level 1
+#         {
+#             "$addFields": {
+#                 "all_categories": {
+#                     "$concatArrays": [
+#                         ["$category_ins"],
+#                         "$parent_hierarchy"
+#                     ]
+#                 }
+#             }
+#         },
+        
+#         # Extract level 1 category from the hierarchy
+#         {
+#             "$addFields": {
+#                 "level1_category": {
+#                     "$arrayElemAt": [
+#                         {
+#                             "$filter": {
+#                                 "input": "$all_categories",
+#                                 "cond": {"$eq": ["$$this.level", 1]}
+#                             }
+#                         },
+#                         0
+#                     ]
+#                 }
+#             }
+#         },
+        
+#         # Lookup brand
+#         {
+#             "$lookup": {
+#                 "from": "brand",
+#                 "localField": "brand_id",
+#                 "foreignField": "_id",
+#                 "as": "brand_ins"
+#             }
+#         },
+#         {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
+#     ]
+    
+#     # Apply search
+#     if search:
+#         regex = {"$regex": search, "$options": "i"}
+#         pipeline.append({"$match": {"$or": [
+#             {"product_name": regex},
+#             {"brand_ins.name": regex},
+#             {"category_ins.name": regex}
+#         ]}})
+    
+#     # Final projection with level 1 and end level category info
+#     pipeline.append({
+#         "$project": {
+#             "_id": 0,
+#             "id": {"$toString": "$_id"},
+#             "product_name": "$product_name",
+#             "brand_name": {"$ifNull": ["$brand_ins.name", "$brand_name"]},
+            
+#             # End level category (current category)
+#             "end_level_category_name": {"$ifNull": ["$category_ins.name", "N/A"]},
+#             "end_level_category_id": {"$toString": "$category_ins._id"},
+#             "category_level": {"$ifNull": ["$category_ins.level", 0]},
+#             "is_end_level_category": {"$ifNull": ["$category_ins.end_level", False]},
+            
+#             # Level 1 category (root category)
+#             "level1_category_name": {
+#                 "$ifNull": ["$level1_category.name", "N/A"]
+#             },
+#             "level1_category_id": {
+#                 "$cond": {
+#                     "if": {"$ne": ["$level1_category", None]},
+#                     "then": {"$toString": "$level1_category._id"},
+#                     "else": None
+#                 }
+#             },
+            
+#             # Debug fields to verify hierarchy
+#             "debug_hierarchy": {
+#                 "$map": {
+#                     "input": "$all_categories",
+#                     "as": "cat",
+#                     "in": {
+#                         "name": "$$cat.name",
+#                         "level": "$$cat.level",
+#                         "end_level": {"$ifNull": ["$$cat.end_level", False]}
+#                     }
+#                 }
+#             }
+#         }
+#     })
+    
+#     pipeline.append({"$sort": {"product_name": 1}})
+    
+#     product_summary = list(product.objects.aggregate(pipeline))
+    
+#     return JsonResponse(product_summary, safe=False)
 @csrf_exempt
-def buyerDiscountPBCT(request):
-    if request.method != "POST":
-        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
-    
-    json_request = JSONParser().parse(request)
-    manufacture_unit_id = json_request.get('manufacture_unit_id')
-    search = json_request.get('search', '').strip()
-    
-    if not manufacture_unit_id:
-        return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
-    
-    base_match = {'manufacture_unit_id': ObjectId(manufacture_unit_id)}
-    
-    pipeline = [
-        {"$match": base_match},
-        
-        # Lookup main category
-        {
-            "$lookup": {
-                "from": "product_category",
-                "localField": "category_id",
-                "foreignField": "_id",
-                "as": "category_ins"
-            }
-        },
-        {"$unwind": {"path": "$category_ins", "preserveNullAndEmptyArrays": True}},
-        
-        # Use GraphLookup to find all parent categories (similar to your obtainProductCategoryList)
-        {
-            "$graphLookup": {
-                "from": "product_category",
-                "startWith": "$category_ins.parent_category_id",
-                "connectFromField": "parent_category_id",
-                "connectToField": "_id",
-                "as": "parent_hierarchy",
-                "maxDepth": 10
-            }
-        },
-        
-        # Add current category to the hierarchy and find level 1
-        {
-            "$addFields": {
-                "all_categories": {
-                    "$concatArrays": [
-                        ["$category_ins"],
-                        "$parent_hierarchy"
-                    ]
-                }
-            }
-        },
-        
-        # Extract level 1 category from the hierarchy
-        {
-            "$addFields": {
-                "level1_category": {
-                    "$arrayElemAt": [
-                        {
-                            "$filter": {
-                                "input": "$all_categories",
-                                "cond": {"$eq": ["$$this.level", 1]}
-                            }
-                        },
-                        0
-                    ]
-                }
-            }
-        },
-        
-        # Lookup brand
-        {
-            "$lookup": {
-                "from": "brand",
-                "localField": "brand_id",
-                "foreignField": "_id",
-                "as": "brand_ins"
-            }
-        },
-        {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
-    ]
-    
-    # Apply search
-    if search:
-        regex = {"$regex": search, "$options": "i"}
-        pipeline.append({"$match": {"$or": [
-            {"product_name": regex},
-            {"brand_ins.name": regex},
-            {"category_ins.name": regex}
-        ]}})
-    
-    # Final projection with level 1 and end level category info
-    pipeline.append({
-        "$project": {
-            "_id": 0,
-            "id": {"$toString": "$_id"},
-            "product_name": "$product_name",
-            "brand_name": {"$ifNull": ["$brand_ins.name", "$brand_name"]},
-            
-            # End level category (current category)
-            "end_level_category_name": {"$ifNull": ["$category_ins.name", "N/A"]},
-            "end_level_category_id": {"$toString": "$category_ins._id"},
-            "category_level": {"$ifNull": ["$category_ins.level", 0]},
-            "is_end_level_category": {"$ifNull": ["$category_ins.end_level", False]},
-            
-            # Level 1 category (root category)
-            "level1_category_name": {
-                "$ifNull": ["$level1_category.name", "N/A"]
-            },
-            "level1_category_id": {
-                "$cond": {
-                    "if": {"$ne": ["$level1_category", None]},
-                    "then": {"$toString": "$level1_category._id"},
-                    "else": None
-                }
-            },
-            
-            # Debug fields to verify hierarchy
-            "debug_hierarchy": {
-                "$map": {
-                    "input": "$all_categories",
-                    "as": "cat",
-                    "in": {
-                        "name": "$$cat.name",
-                        "level": "$$cat.level",
-                        "end_level": {"$ifNull": ["$$cat.end_level", False]}
-                    }
-                }
-            }
-        }
-    })
-    
-    pipeline.append({"$sort": {"product_name": 1}})
-    
-    product_summary = list(product.objects.aggregate(pipeline))
-    
-    return JsonResponse(product_summary, safe=False)
-
 @csrf_exempt
 @api_view(['GET'])
 def dealer_order_product_brand_autosuggest(request):
