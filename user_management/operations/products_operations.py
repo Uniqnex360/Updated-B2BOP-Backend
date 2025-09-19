@@ -1220,7 +1220,83 @@ def buyerDiscount_categories_list(request):
     })
  
 
+from django.http import JsonResponse
 
+from django.views.decorators.csrf import csrf_exempt
+
+from mongoengine.errors import ValidationError, DoesNotExist
+ 
+# GET /discounts?buyer_id=...
+
+def get_discounts(request):
+    buyer_id = request.GET.get('buyer_id')
+    if not buyer_id:
+        return JsonResponse({"error": "buyer_id is required"}, status=400)
+    discounts = Discount.objects(buyer_id=buyer_id)
+    result = [serialize_discount(d) for d in discounts]
+    return JsonResponse({"discounts": result}, status=200)
+ 
+ 
+ 
+def serialize_discount(discount):
+    doc = discount.to_mongo().to_dict()
+    doc["_id"] = str(doc["_id"])
+    # Convert any other ObjectId fields to string
+    if doc.get("buyer_id"):
+        doc["buyer_id"] = str(doc["buyer_id"])
+    if doc.get("product_id"):
+        doc["product_id"] = str(doc["product_id"])
+    if doc.get("category_id"):
+        doc["category_id"] = str(doc["category_id"])
+    if doc.get("brand_id"):
+        doc["brand_id"] = str(doc["brand_id"])
+    return doc
+# POST /discounts
+
+@csrf_exempt
+
+@csrf_exempt
+def add_discount(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        discount = Discount(
+            buyer_id=data.get('buyer_id'),
+            type=data.get('type'),
+            product_id=data.get('product_id'),
+            category_id=data.get('category_id'),
+            brand_id=data.get('brand_id'),
+            discount_value=data.get('discount_value'),
+            discount_type=data.get('discount_type', "%"),
+            min_quantity=data.get('min_quantity', 1),
+            min_order_value=data.get('min_order_value', 0.0),
+            category_level1_name=data.get('category_level1_name'),
+            category_end_name=data.get('category_end_name')
+        )
+        discount.save()
+        doc = serialize_discount(discount)  # Use the serializer to convert ObjectIds
+        return JsonResponse({"discount": doc}, status=201)
+    except ValidationError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    
+    
+# DELETE /discounts/:id
+
+
+@csrf_exempt
+def delete_discount(request, discount_id):
+    if request.method != "DELETE":
+        return JsonResponse({"error": "DELETE required"}, status=405)
+    try:
+        discount = Discount.objects.get(id=discount_id)
+        discount.delete()
+        return JsonResponse({"message": "Discount deleted"}, status=200)
+    except DoesNotExist:
+        return JsonResponse({"error": "Discount not found"}, status=404)
 
 @csrf_exempt
 def buyerProductDiscount(request):
@@ -1274,63 +1350,6 @@ def buyerProductDiscount(request):
     product_names = [p["product_name"] for p in products]
 
     return JsonResponse(product_names, safe=False)
-
-
-@csrf_exempt
-def add_discount(request):
-    if request.method != "POST":
-        return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
-
-    data = json.loads(request.body)
-    
-    buyer = user.objects(id=data.get("buyer_id")).first()
-    if not buyer:
-        return JsonResponse({"status": False, "message": "Buyer not found"}, status=400)
-
-    discount_type = data.get("type")
-    discount_value = data.get("discount_value")
-    discount_kind = data.get("discount_type", "%")
-
-    new_discount = Discount(
-        buyer_id=buyer,
-        type=discount_type,
-        discount_value=discount_value,
-        discount_type=discount_kind
-    )
-
-    # Attach references based on type
-    if discount_type == "Product":
-        new_discount.product_id = product.objects(id=data.get("product_id")).first()
-        new_discount.min_quantity = data.get("min_quantity", 1)
-    elif discount_type == "Category":
-        new_discount.category_id = product_category.objects(id=data.get("category_id")).first()
-    elif discount_type == "Brand":
-        new_discount.brand_id = brand.objects(id=data.get("brand_id")).first()
-    elif discount_type == "Order":
-        new_discount.min_order_value = data.get("min_order_value", 0.0)
-
-    new_discount.save()
-    return JsonResponse({"status": True, "message": "Discount saved successfully."})
-
-@csrf_exempt
-def get_discounts(request, buyer_id):
-    discounts = Discount.objects(buyer_id=buyer_id)
-    discount_list = []
-
-    for d in discounts:
-        discount_list.append({
-            "id": str(d.id),
-            "type": d.type,
-            "product_id": str(d.product_id.id) if d.product_id else None,
-            "category_id": str(d.category_id.id) if d.category_id else None,
-            "brand_id": str(d.brand_id.id) if d.brand_id else None,
-            "discount_value": d.discount_value,
-            "discount_type": d.discount_type,
-            "min_quantity": d.min_quantity,
-            "min_order_value": d.min_order_value,
-        })
-
-    return JsonResponse({"status": True, "discounts": discount_list})
 
 
 
