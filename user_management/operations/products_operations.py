@@ -1253,7 +1253,6 @@ def serialize_discount(discount):
     return doc
 # POST /discounts
 
-@csrf_exempt
 
 @csrf_exempt
 def add_discount(request):
@@ -1284,7 +1283,7 @@ def add_discount(request):
         return JsonResponse({"error": str(e)}, status=400)
     
     
-# DELETE /discounts/:id
+# DELETE /discounts/:id##
 
 
 @csrf_exempt
