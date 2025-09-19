@@ -13,7 +13,7 @@ from user_management.operations.user_operations import createORUpdateManufacture
 
 from user_management.operations.products_operations import obtainProductsListAutoSuggestion,obtainProductsListAutoSuggestionForDealer
 from user_management.operations.products_operations import obtainProductCategoryList,buyerProductDiscount,   obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new
-from user_management.operations.products_operations import getIndustryCategoryBrand,get_discounts,add_discount,seller_dashboard_view,buyerDiscount_Product,buyerDiscount_brands_list
+from user_management.operations.products_operations import getIndustryCategoryBrand,get_discounts,add_discount,seller_dashboard_view,buyerDiscount_Product,buyerDiscount_brands_list,buyerDiscount_categories_list
 from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails,moveCartItemsToWishlist
 
 urlpatterns = [
@@ -81,7 +81,7 @@ path('seller_dashboard_kpis/', seller_dashboard_view, name='seller_dashboard_kpi
   
      path('buyerDiscount_Product/', buyerDiscount_Product, name='buyerDiscount_Product'),
      path('buyerDiscount_brands_list/', buyerDiscount_brands_list, name='buyerDiscount_brands_list'),
-
+    path('buyerDiscount_categories_list/', buyerDiscount_categories_list, name='buyerDiscount_categories_list'),
     path('buyerProductDiscount/', buyerProductDiscount, name='buyerProductDiscount'),
     path('obtainProductsListAutoSuggestion/', obtainProductsListAutoSuggestion, name="obtainProductsListAutoSuggestion"),
     path('obtainbrandList/',obtainbrandList,name="obtainbrandList"),

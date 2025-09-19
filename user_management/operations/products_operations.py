@@ -1151,6 +1151,77 @@ def buyerDiscount_brands_list(request):
         "brands": brands
     })
 
+
+@csrf_exempt
+def buyerDiscount_categories_list(request):
+    manufacture_unit_id = request.GET.get("manufacture_unit_id")
+    if not manufacture_unit_id:
+        return JsonResponse({"status": False, "message": "manufacture_unit_id required"}, status=400)
+ 
+    # Pagination parameters
+    try:
+        page = int(request.GET.get("page", 1))
+        limit = int(request.GET.get("limit", 10))
+    except ValueError:
+        return JsonResponse({"status": False, "message": "page and limit must be numbers"}, status=400)
+ 
+    # Helper function to get top-level parent (level1)
+    def get_level1(category):
+        current = category
+        while getattr(current, "parent_category_id", None):
+            current = current.parent_category_id
+        return current.name
+ 
+    # Get all products for this manufacture unit
+    product_qs = product.objects(manufacture_unit_id=ObjectId(manufacture_unit_id))
+ 
+    # Collect unique end-level category IDs used by products
+    category_ids = set()
+    for p in product_qs:
+        cat = getattr(p, "category_id", None)
+        if cat and getattr(cat, "end_level", False):  # only end-level
+            category_ids.add(cat.id)
+ 
+    if not category_ids:
+        return JsonResponse({
+            "status": True,
+            "page": page,
+            "limit": limit,
+            "total": 0,
+            "categories": []
+        })
+ 
+    # Fetch only those categories
+    category_qs = product_category.objects(id__in=list(category_ids))
+ 
+    # Total count
+    total = category_qs.count()
+ 
+    # Apply pagination
+    start = (page - 1) * limit
+    end = start + limit
+    category_qs = category_qs[start:end]
+ 
+    categories = []
+    for c in category_qs:
+        level1_name = get_level1(c)
+        categories.append({
+            "_id": str(c.id),
+            "level1": level1_name,
+            "endLevel": c.name
+        })
+ 
+    return JsonResponse({
+        "status": True,
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "categories": categories
+    })
+ 
+
+
+
 @csrf_exempt
 def buyerProductDiscount(request):
     """
