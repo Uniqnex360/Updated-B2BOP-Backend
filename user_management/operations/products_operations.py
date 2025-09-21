@@ -1835,25 +1835,27 @@ def productCountForDealer(request):
 
     return total_count
 
+@csrf_exempt
 def obtainProductDetails(request):
     product_id = request.GET.get('product_id')
+    buyer_id = request.GET.get('buyer_id')  # <-- Accept buyer_id for discount logic
     product_list = {}
-    pipeline =[
+    pipeline = [
         {
-            "$match" : {
-                "_id" : ObjectId(product_id),
+            "$match": {
+                "_id": ObjectId(product_id),
             }
         },
         {
-                "$lookup": {
-                    "from": "product_category",
-                    "localField": "category_id",
-                    "foreignField": "_id",
-                    "as": "product_category_ins"
-                }
-            },
-            {"$unwind" : "$product_category_ins"},
-         {
+            "$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "product_category_ins"
+            }
+        },
+        {"$unwind": "$product_category_ins"},
+        {
             "$lookup": {
                 "from": "brand",
                 "localField": "brand_id",
@@ -1862,54 +1864,98 @@ def obtainProductDetails(request):
             }
         },
         {
-        "$unwind": {
-            "path": "$brand_ins", 
-            "preserveNullAndEmptyArrays": True
-        }
+            "$unwind": {
+                "path": "$brand_ins",
+                "preserveNullAndEmptyArrays": True
+            }
         },
         {
-           "$project" :{
-            "_id":0,
-            "id" : {"$toString" : "$_id"},
-            "product_name" : {"$ifNull": ["$product_name", "N/A"]},
-            "sku_number_product_code_item_number" : {"$ifNull": ["$sku_number_product_code_item_number", "N/A"]},
-            "model" : {"$ifNull": ["$model", "N/A"]},
-            "mpn" : {"$ifNull": ["$mpn", "N/A"]},
-            "upc_ean" : {"$ifNull": ["$upc_ean", "N/A"]},
-            "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
-            "long_description" : {"$ifNull": ["$long_description", "N/A"]},
-            "short_description" : {"$ifNull": ["$short_description", "N/A"]},
-            "list_price" : {"$ifNull": ["$list_price", 0.0]},
-            "msrp" : {"$ifNull" : ["$msrp",0.0]},
-            "was_price" : {"$ifNull" : ["$was_price",0.0]},
-            "discount": { 
-            "$concat": [
-                { "$toString": { "$round": [{"$ifNull": ["$discount", 0]}, 2] } }, 
-                "%" 
-            ] 
-            },
-            "brand_name" : {"$ifNull": ["$brand_name", "N/A"]},
-            "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
-            "currency" : {"$ifNull": ["$currency", "N/A"]},
-            "quantity" : {"$ifNull": ["$quantity", 0]},
-            "availability" : {"$ifNull": ["$availability", False]},
-            "images" : {"$ifNull": ["$images", []]},
-            "attributes" : {"$ifNull": ["$attributes", {}]},
-            "features" : {"$ifNull": ["$features", []]},
-            "from_the_manufacture" : {"$ifNull": ["$from_the_manufacture", "N/A"]},
-            "visible" : {"$ifNull": ["$visible", False]},
-            "end_level_category" : {"$ifNull": ["$product_category_ins.name", "N/A"]},
-            "industry_id_str" : {"$ifNull": ["$industry_id_str",""]}
-           }
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "product_name": {"$ifNull": ["$product_name", "N/A"]},
+                "sku_number_product_code_item_number": {"$ifNull": ["$sku_number_product_code_item_number", "N/A"]},
+                "model": {"$ifNull": ["$model", "N/A"]},
+                "mpn": {"$ifNull": ["$mpn", "N/A"]},
+                "upc_ean": {"$ifNull": ["$upc_ean", "N/A"]},
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "long_description": {"$ifNull": ["$long_description", "N/A"]},
+                "short_description": {"$ifNull": ["$short_description", "N/A"]},
+                "list_price": {"$ifNull": ["$list_price", 0.0]},
+                "msrp": {"$ifNull": ["$msrp", 0.0]},
+                "was_price": {"$ifNull": ["$was_price", 0.0]},
+                "discount": {"$concat": [
+                    {"$toString": {"$round": [{"$ifNull": ["$discount", 0]}, 2]}},
+                    "%"
+                ]},
+                "brand_name": {"$ifNull": ["$brand_name", "N/A"]},
+                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+                "currency": {"$ifNull": ["$currency", "N/A"]},
+                "quantity": {"$ifNull": ["$quantity", 0]},
+                "availability": {"$ifNull": ["$availability", False]},
+                "images": {"$ifNull": ["$images", []]},
+                "attributes": {"$ifNull": ["$attributes", {}]},
+                "features": {"$ifNull": ["$features", []]},
+                "from_the_manufacture": {"$ifNull": ["$from_the_manufacture", "N/A"]},
+                "visible": {"$ifNull": ["$visible", False]},
+                "end_level_category": {"$ifNull": ["$product_category_ins.name", "N/A"]},
+                "industry_id_str": {"$ifNull": ["$industry_id_str", ""]},
+                "category_id": {"$toString": "$category_id"},
+                "brand_id": {"$toString": "$brand_id"},
+            }
         }
     ]
     product_list = list(product.objects.aggregate(*(pipeline)))
     if len(product_list) > 0:
         if product_list[0]['industry_id_str'] != "":
-            product_list[0]['industry_name'] = DatabaseModel.get_document(industry.objects,{"id" :product_list[0]['industry_id_str']},['name']).name
+            product_list[0]['industry_name'] = DatabaseModel.get_document(
+                industry.objects, {"id": product_list[0]['industry_id_str']}, ['name']
+            ).name
         else:
             product_list[0]['industry_name'] = "N/A"
         product_list = product_list[0]
+
+        # --- Discount logic (same as obtainProductsListForDealer) ---
+        if buyer_id:
+            discounts = list(Discount.objects(buyer_id=buyer_id))
+            def get_discounted_price(product, discounts):
+                best_price = product["list_price"]
+                applied_discount = None
+                for discount in discounts:
+                    applies = False
+                    if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["id"]:
+                        applies = True
+                    elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                        applies = True
+                    elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                        applies = True
+                    if applies and product.get("quantity", 1) >= discount.min_quantity:
+                        if discount.discount_type == "%":
+                            discounted = round(product["list_price"] * (1 - discount.discount_value / 100), 2)
+                        else:
+                            discounted = max(round(product["list_price"] - discount.discount_value, 2), 0)
+                        if discounted < best_price:
+                            best_price = discounted
+                            applied_discount = {
+                                "applied_discount_type": discount.type,
+                                "applied_discount_id": str(discount.id),
+                                "applied_discount_value": discount.discount_value,
+                                "applied_discount_unit": discount.discount_type
+                            }
+                if applied_discount:
+                    return best_price, applied_discount
+                return product["list_price"], None
+
+            discounted_price, discount_info = get_discounted_price(product_list, discounts)
+            product_list["discounted_price"] = discounted_price
+            if discount_info:
+                product_list.update(discount_info)
+            else:
+                product_list["applied_discount_type"] = None
+                product_list["applied_discount_id"] = None
+                product_list["applied_discount_value"] = None
+                product_list["applied_discount_unit"] = None
+
     def replace_nan_with_none(d):
         for key, value in d.items():
             if isinstance(value, dict):
@@ -1919,8 +1965,6 @@ def obtainProductDetails(request):
 
     replace_nan_with_none(product_list)
     return product_list
-
-
 
 
 @csrf_exempt

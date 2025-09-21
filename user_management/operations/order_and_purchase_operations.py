@@ -82,49 +82,89 @@ def createOrUpdateUserCartItem(request):
     return data
 
 
-
 def obtainUserCartItemList(request):
-    # user_id = obtainUserIdFromToken(request)
     user_id = request.GET.get('user_id')
-    pipeline =[
+    pipeline = [
         {
-            "$match" : {
-                "user_id" : ObjectId(user_id),
-                "status" : "Pending"
+            "$match": {
+                "user_id": ObjectId(user_id),
+                "status": "Pending"
             }
         },
         {
-            "$lookup" :{
-                "from" : "product",
-                "localField" : "product_id",
-                "foreignField" : "_id",
-                "as" : "products_ins"
+            "$lookup": {
+                "from": "product",
+                "localField": "product_id",
+                "foreignField": "_id",
+                "as": "products_ins"
             }
         },
-        {"$unwind" : "$products_ins"},
+        {"$unwind": "$products_ins"},
         {
-           "$project" :{
+            "$project": {
                 "_id": 0,
-                "id" : {"$toString" : "$_id"},
-                "product_id" : {"$toString" : "$products_ins._id"},
-                "name" : "$products_ins.product_name",
-                "description" : "$products_ins.long_description",
-                "price" : {"$ifNull" : ["$unit_price",0.0]},
-                "currency" : "$products_ins.currency",
-                "primary_image" : {"$first":"$products_ins.images"},
-                "sku_number" : "$products_ins.sku_number_product_code_item_number",
-                "mpn_number" : "$products_ins.mpn",
-                "brand_name" : "$products_ins.brand_name",
-                # "colour" : "$products_ins.colour",
-                "quantity" : 1,
-                "total_price" : "$price"
-           }
+                "id": {"$toString": "$_id"},
+                "product_id": {"$toString": "$products_ins._id"},
+                "name": "$products_ins.product_name",
+                "description": "$products_ins.long_description",
+                "price": {"$ifNull": ["$unit_price", 0.0]},
+                "list_price": {"$ifNull": ["$products_ins.list_price", 0.0]},
+                "currency": "$products_ins.currency",
+                "primary_image": {"$first": "$products_ins.images"},
+                "sku_number": "$products_ins.sku_number_product_code_item_number",
+                "mpn_number": "$products_ins.mpn",
+                "brand_name": "$products_ins.brand_name",
+                "category_id": {"$toString": "$products_ins.category_id"},
+                "brand_id": {"$toString": "$products_ins.brand_id"},
+                "quantity": 1,
+                "total_price": "$price"
+            }
         }
     ]
     user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
+
+    # --- Discount logic (same as PLP/PDP) ---
+    discounts = list(Discount.objects(buyer_id=user_id))
+    def get_discounted_price(product, discounts):
+        best_price = product["list_price"]
+        applied_discount = None
+        for discount in discounts:
+            applies = False
+            if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["product_id"]:
+                applies = True
+            elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                applies = True
+            elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                applies = True
+            if applies and product.get("quantity", 1) >= discount.min_quantity:
+                if discount.discount_type == "%":
+                    discounted = round(product["list_price"] * (1 - discount.discount_value / 100), 2)
+                else:
+                    discounted = max(round(product["list_price"] - discount.discount_value, 2), 0)
+                if discounted < best_price:
+                    best_price = discounted
+                    applied_discount = {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+        if applied_discount:
+            return best_price, applied_discount
+        return product["list_price"], None
+
+    for prod in user_cart_item_list:
+        discounted_price, discount_info = get_discounted_price(prod, discounts)
+        prod["discounted_price"] = discounted_price
+        if discount_info:
+            prod.update(discount_info)
+        else:
+            prod["applied_discount_type"] = None
+            prod["applied_discount_id"] = None
+            prod["applied_discount_value"] = None
+            prod["applied_discount_unit"] = None
+
     return user_cart_item_list
-
-
 
 @csrf_exempt
 def updateOrDeleteUserCartItem(request):
@@ -146,44 +186,91 @@ def updateOrDeleteUserCartItem(request):
         data['is_updated'] = True
     return data
 
-
 def totalCheckOutAmount(request):
-    # user_id = obtainUserIdFromToken(request)
     user_id = request.GET.get('user_id')
+    # Fetch cart items with product info
     pipeline = [
-    {
-        "$match": {
-            "user_id": ObjectId(user_id),
-            "status": "Pending"
-        }
-    },
-    {
-        "$group": {
-            "_id": None,
-            'total_amount': {'$sum': '$price'},
-            'cart_count': {'$sum': 1} 
-        }
-    },
-    {
-        "$project": {
-            "_id": 0,
-            'total_amount': {"$round":["$total_amount",2]},
-            'cart_count': "$cart_count" 
-        }
+        {
+            "$match": {
+                "user_id": ObjectId(user_id),
+                "status": "Pending"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "product",
+                "localField": "product_id",
+                "foreignField": "_id",
+                "as": "products_ins"
+            }
+        },
+        {"$unwind": "$products_ins"},
+        {
+            "$project": {
+                "_id": 0,
+                "product_id": {"$toString": "$products_ins._id"},
+                "name": "$products_ins.product_name",
+                "category_id": {"$toString": "$products_ins.category_id"},
+                "brand_id": {"$toString": "$products_ins.brand_id"},
+                "list_price": {"$ifNull": ["$products_ins.list_price", 0.0]},
+                "quantity": {"$ifNull": ["$quantity", 1]}
+            }
         }
     ]
+    cart_items = list(user_cart_item.objects.aggregate(*pipeline))
 
-    user_cart_item_list = list(user_cart_item.objects.aggregate(*(pipeline)))
-    if len(user_cart_item_list) > 0:
-        user_cart_item_list= user_cart_item_list[0]
-    else:
-        user_cart_item_list = {
-            "total_amount" : 0.0,
-            "cart_count" : 0
-        }
+    # Fetch discounts for the user
+    discounts = list(Discount.objects(buyer_id=user_id))
 
-    return user_cart_item_list
+    def get_discounted_price(product, discounts):
+        best_price = product["list_price"]
+        applied_discount = None
+        for discount in discounts:
+            applies = False
+            if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["product_id"]:
+                applies = True
+            elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                applies = True
+            elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                applies = True
+            if applies and product.get("quantity", 1) >= discount.min_quantity:
+                if discount.discount_type == "%":
+                    discounted = round(product["list_price"] * (1 - discount.discount_value / 100), 2)
+                else:
+                    discounted = max(round(product["list_price"] - discount.discount_value, 2), 0)
+                if discounted < best_price:
+                    best_price = discounted
+                    applied_discount = {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+        if applied_discount:
+            return best_price, applied_discount
+        return product["list_price"], None
 
+    total_amount = 0.0
+    detailed_cart = []
+    for item in cart_items:
+        discounted_price, discount_info = get_discounted_price(item, discounts)
+        total_amount += discounted_price * item.get("quantity", 1)
+        item["discounted_price"] = discounted_price
+        if discount_info:
+            item.update(discount_info)
+        else:
+            item["applied_discount_type"] = None
+            item["applied_discount_id"] = None
+            item["applied_discount_value"] = None
+            item["applied_discount_unit"] = None
+        detailed_cart.append(item)
+
+    result = {
+        "total_amount": round(total_amount, 2),
+        "cart_count": len(cart_items),
+        "cart_items": detailed_cart  # <-- includes discount info for each item
+    }
+    return result
 @csrf_exempt
 def obtainOrderList(request):
     try:
