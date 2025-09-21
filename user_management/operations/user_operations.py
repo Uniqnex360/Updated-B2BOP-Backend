@@ -1442,7 +1442,6 @@ from user_management.models import user_cart_item
     
 #     return JsonResponse(product_summary, safe=False)
 @csrf_exempt
-@csrf_exempt
 @api_view(['GET'])
 def dealer_order_product_brand_autosuggest(request):
     """

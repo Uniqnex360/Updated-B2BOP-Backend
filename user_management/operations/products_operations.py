@@ -1240,8 +1240,13 @@ def get_discounts(request):
  
 def serialize_discount(discount):
     doc = discount.to_mongo().to_dict()
+
+    # Convert MongoDB _id to string
     doc["_id"] = str(doc["_id"])
-    # Convert any other ObjectId fields to string
+
+    # Convert ObjectId fields to strings
+    if doc.get("manufacture_unit_id"):
+        doc["manufacture_unit_id"] = str(doc["manufacture_unit_id"])
     if doc.get("buyer_id"):
         doc["buyer_id"] = str(doc["buyer_id"])
     if doc.get("product_id"):
@@ -1250,8 +1255,8 @@ def serialize_discount(discount):
         doc["category_id"] = str(doc["category_id"])
     if doc.get("brand_id"):
         doc["brand_id"] = str(doc["brand_id"])
+
     return doc
-# POST /discounts
 
 
 @csrf_exempt
@@ -1261,7 +1266,9 @@ def add_discount(request):
 
     try:
         data = json.loads(request.body)
+
         discount = Discount(
+            manufacture_unit_id=data.get('manufacture_unit_id'),  # 👈 new field
             buyer_id=data.get('buyer_id'),
             type=data.get('type'),
             product_id=data.get('product_id'),
@@ -1274,14 +1281,16 @@ def add_discount(request):
             category_level1_name=data.get('category_level1_name'),
             category_end_name=data.get('category_end_name')
         )
+
         discount.save()
         doc = serialize_discount(discount)  # Use the serializer to convert ObjectIds
         return JsonResponse({"discount": doc}, status=201)
+
     except ValidationError as e:
         return JsonResponse({"error": str(e)}, status=400)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
-    
+
     
 # DELETE /discounts/:id##
 
@@ -1477,291 +1486,276 @@ def obtainProductsListForDealer(request):
     industry_id_str = json_request.get('industry_id')
     skip = int(json_request.get("skip"))
     limit = int(json_request.get("limit"))
+    buyer_id = json_request.get('buyer_id')  # <-- Accept buyer_id
 
     filters = json_request.get('filters')
     sort_by = json_request.get('sort_by')
     sort_by_value = json_request.get('sort_by_value')
 
     brand_id_list = json_request.get('brand_id_list')
-    if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+    if brand_id_list:
         brand_id_list = [ObjectId(ins) for ins in brand_id_list]
     price_from = json_request.get('price_from')
     price_to = json_request.get('price_to')
 
-    match = {}
-    match['manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-    match['visible'] = True
-
+    match = {
+        'manufacture_unit_id': ObjectId(manufacture_unit_id),
+        'visible': True
+    }
     if product_category_id != "":
         match['category_id'] = ObjectId(product_category_id)
-    if filters != None and filters != "all" and filters != "":
+    if filters not in (None, "all", ""):
         match['availability'] = True if filters == "true" else False
-    if industry_id_str != None and industry_id_str != "":
+    if industry_id_str:
         match['industry_id_str'] = industry_id_str
 
+    # Fetch all discounts for this buyer
+    discounts = []
+    if buyer_id:
+        discounts = list(Discount.objects(buyer_id=buyer_id))
+
+    # Enhanced: Return both discounted price and discount info
+    def get_discounted_price(product, discounts):
+        for discount in discounts:
+            # Product-level
+            if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["id"]:
+                if product.get("quantity", 1) >= discount.min_quantity:
+                    if discount.discount_type == "%":
+                        discounted = round(product["price"] * (1 - discount.discount_value / 100), 2)
+                    else:
+                        discounted = max(round(product["price"] - discount.discount_value, 2), 0)
+                    return discounted, {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+            # Category-level
+            elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                if product.get("quantity", 1) >= discount.min_quantity:
+                    if discount.discount_type == "%":
+                        discounted = round(product["price"] * (1 - discount.discount_value / 100), 2)
+                    else:
+                        discounted = max(round(product["price"] - discount.discount_value, 2), 0)
+                    return discounted, {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+            # Brand-level
+            elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                if product.get("quantity", 1) >= discount.min_quantity:
+                    if discount.discount_type == "%":
+                        discounted = round(product["price"] * (1 - discount.discount_value / 100), 2)
+                    else:
+                        discounted = max(round(product["price"] - discount.discount_value, 2), 0)
+                    return discounted, {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+        return product["price"], None
+
+    # Build aggregation pipeline
     if product_category_id == "":
-        pipeline =[
-            {
-                "$match" : match
-            },
-            {
-                "$lookup": {
-                    "from": "product_category",
-                    "localField": "category_id",
-                    "foreignField": "_id",
-                    "as": "product_category_ins"
-                }
-            },
-            {"$unwind" : "$product_category_ins"},
-            {
-                "$lookup": {
-                    "from": "brand",
-                    "localField": "brand_id",
-                    "foreignField": "_id",
-                    "as": "brand_ins"
-                }
-            },
-            {
-            "$unwind": {
-                "path": "$brand_ins", 
+        pipeline = [
+            {"$match": match},
+            {"$lookup": {
+                "from": "product_category",
+                "localField": "category_id",
+                "foreignField": "_id",
+                "as": "product_category_ins"
+            }},
+            {"$unwind": "$product_category_ins"},
+            {"$lookup": {
+                "from": "brand",
+                "localField": "brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }},
+            {"$unwind": {
+                "path": "$brand_ins",
                 "preserveNullAndEmptyArrays": True
-            }
-            },
-            {
-                "$lookup": {
-                    "from": "wishlist",
-                    "localField": "_id",
-                    "foreignField": "product_id",
-                    "as": "wishlist_ins"
-                }
-            },
-            {
-            "$unwind": {
-                "path": "$wishlist_ins", 
+            }},
+            {"$lookup": {
+                "from": "wishlist",
+                "localField": "_id",
+                "foreignField": "product_id",
+                "as": "wishlist_ins"
+            }},
+            {"$unwind": {
+                "path": "$wishlist_ins",
                 "preserveNullAndEmptyArrays": True
-            }
-            }
-            ]
-        price_match = dict()
-        if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
+            }}
+        ]
+        price_match = {}
+        if brand_id_list:
             price_match['brand_ins._id'] = {"$in": brand_id_list}
-        if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
-            if price_to > 0:
+        if price_from and price_to:
+            if int(price_to) > 0:
                 price_to = int(price_to) + 1
             price_match['list_price'] = {
                 "$gte": int(price_from),
                 "$lte": price_to
             }
-        if price_match != {}:
-            brand_match = {
-                "$match" : price_match
-            }
-            pipeline.append(brand_match)
-        project_stage = {
-            "$project" :{
-                "_id":0,
-                "id" : {"$toString" : "$_id"},
-                "name" : "$product_name",
-                "logo" : {"$ifNull" : [{"$first":"$images"},"http://example.com/"]},
-                "sku_number" : "$sku_number_product_code_item_number",
-                "mpn" : 1,
-                "msrp" : {"$round" : ["$msrp",2]},
-                "was_price" :{"$round" : ["$was_price",2]},
-                "brand_name" : 1,
-                "visible" : 1,
-                "end_level_category" : "$product_category_ins.name",
-                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
-                "price" : {"$round":["$list_price",2]},
-                "currency" : 1,
-                "availability" : 1,
-                "discount" : 1,
-                "quantity" : 1,
-                "is_wishlist": {
-                "$cond": {
-                    "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                    "then": True,
-                    "else": False
-                }
-                },
-                "wishlist_id": {
-                    "$cond": {
-                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                        "then": {"$toString":"$wishlist_ins._id"}, 
-                        "else": None
-                    }
-                }
-            }
-            }
-            
-        pipeline.append(project_stage)
-        if sort_by != None and sort_by != "":
-            sorting_pipeline = [{
-                    "$sort": {
-                        sort_by: int(sort_by_value)
-                    }
-                },
-                {
-                    "$skip": skip
-                },
-                {
-                    "$limit": limit
-                }]
-            pipeline.extend(sorting_pipeline)
-        product_list = list(product.objects.aggregate(*(pipeline)))
-
-    elif product_category_id != "":
-        match = {}
-        match['product_ins.manufacture_unit_id'] = ObjectId(manufacture_unit_id)
-        match['product_ins.visible'] = True
-        if filters != None and filters != "all" and filters != "":
-            match['product_ins.availability'] = True if filters == "true" else False
-        pipeline = [
-        {
-            "$match": {
-                "_id": ObjectId(product_category_id)
-            }
-        },
-        # {
-        #     "$graphLookup": {
-        #         "from": "product_category",
-        #         "startWith": "$_id",
-        #         "connectFromField": "_id",
-        #         "connectToField": "parent_category_id",
-        #         "as": "all_categories",
-        #         "maxDepth": 5
-        #     }
-        # },
-        # {
-        #     "$project": {
-        #         "category_ids": {
-        #             "$map": {
-        #                 "input": "$all_categories",
-        #                 "as": "category",
-        #                 "in": "$$category._id"
-        #             }
-        #         }
-        #     }
-        # },
-        # {"$unwind": "$category_ids"},
-        {
-            "$lookup": {
-                "from": "product",
-                "localField": "_id",
-                "foreignField": "category_id",
-                "as": "product_ins"
-            }
-        },
-        {"$unwind": "$product_ins"},
-        {
-                "$match" : match
-        },
-        # {
-        #     "$lookup": {
-        #         "from": "product_category",
-        #         "localField": "product_ins.category_id",
-        #         "foreignField": "_id",
-        #         "as": "product_category_ins"
-        #     }
-        # },
-        # {"$unwind": "$product_category_ins"},
-        #  {
-        #     "$addFields": {
-        #         "end_level_category": "$product_category_ins.name"
-        #     }
-        # },
-        {
-            "$lookup": {
-                "from": "brand",
-                "localField": "product_ins.brand_id",
-                "foreignField": "_id",
-                "as": "brand_ins"
-            }
-        },
-        {"$unwind": "$brand_ins"},
-         {
-                "$lookup": {
-                    "from": "wishlist",
-                    "localField": "product_ins._id",
-                    "foreignField": "product_id",
-                    "as": "wishlist_ins"
-                }
-            },
-            {
-            "$unwind": {
-                "path": "$wishlist_ins", 
-                "preserveNullAndEmptyArrays": True
-            }
-            }
-        ]
-        price_match = dict()
-        if brand_id_list != None and brand_id_list != "" and brand_id_list != []:
-            price_match['brand_ins._id'] = {"$in": brand_id_list}
-        if (price_from != None and price_from != "") and (price_to != None and price_to != ""):
-            if price_to > 0:
-                price_to = int(price_to) + 1
-
-            price_match['product_ins.list_price'] = {
-                "$gte": int(price_from),
-                "$lte": price_to
-            }
-        if price_match != {}:
-            brand_match = {
-                "$match" : price_match
-            }
-            pipeline.append(brand_match)
+        if price_match:
+            pipeline.append({"$match": price_match})
         project_stage = {
             "$project": {
                 "_id": 0,
-                "id": {"$toString": "$product_ins._id"},
-                "name": "$product_ins.product_name",
-                "logo": {"$ifNull" : [{"$first": "$product_ins.images"},"http://example.com/"]},
-                "sku_number": "$product_ins.sku_number_product_code_item_number",
-                "mpn": "$product_ins.mpn",
-                "msrp": {"$round":["$product_ins.msrp",2]},
-                "was_price": {"$round":["$product_ins.was_price",2]},
-                "brand_name": "$product_ins.brand_name",
-                "visible": "$product_ins.visible",
-                "end_level_category": "$name",
-                "brand_logo" : {"$ifNull" : ["$brand_ins.logo",""]},
-                "price": {"$round":["$product_ins.list_price",2]},
-                "currency": "$product_ins.currency",
-                "availability": "$product_ins.availability",
-                "discount" : {"$round": ["$product_ins.discount", 2]}, 
-                "quantity" : "$product_ins.quantity",
+                "id": {"$toString": "$_id"},
+                "name": "$product_name",
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "sku_number": "$sku_number_product_code_item_number",
+                "mpn": 1,
+                "msrp": {"$round": ["$msrp", 2]},
+                "was_price": {"$round": ["$was_price", 2]},
+                "brand_name": 1,
+                "visible": 1,
+                "end_level_category": "$product_category_ins.name",
+                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+                "price": {"$round": ["$list_price", 2]},
+                "currency": 1,
+                "availability": 1,
+                "discount": 1,
+                "quantity": 1,
+                "category_id": {"$toString": "$category_id"},
+                "brand_id": {"$toString": "$brand_id"},
                 "is_wishlist": {
-                "$cond": {
-                    "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                    "then": True,
-                    "else": False
-                }
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": True,
+                        "else": False
+                    }
                 },
                 "wishlist_id": {
                     "$cond": {
                         "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
-                        "then": {"$toString":"$wishlist_ins._id"}, 
+                        "then": {"$toString": "$wishlist_ins._id"},
                         "else": None
                     }
                 }
             }
         }
         pipeline.append(project_stage)
-        if sort_by != None and sort_by != "":
-            sorting_pipeline = [{
-                    "$sort": {
-                        sort_by: int(sort_by_value)
+        if sort_by:
+            sorting_pipeline = [
+                {"$sort": {sort_by: int(sort_by_value)}},
+                {"$skip": skip},
+                {"$limit": limit}
+            ]
+            pipeline.extend(sorting_pipeline)
+        product_list = list(product.objects.aggregate(*pipeline))
+
+    elif product_category_id != "":
+        match = {
+            'product_ins.manufacture_unit_id': ObjectId(manufacture_unit_id),
+            'product_ins.visible': True
+        }
+        if filters not in (None, "all", ""):
+            match['product_ins.availability'] = True if filters == "true" else False
+        pipeline = [
+            {"$match": {"_id": ObjectId(product_category_id)}},
+            {"$lookup": {
+                "from": "product",
+                "localField": "_id",
+                "foreignField": "category_id",
+                "as": "product_ins"
+            }},
+            {"$unwind": "$product_ins"},
+            {"$match": match},
+            {"$lookup": {
+                "from": "brand",
+                "localField": "product_ins.brand_id",
+                "foreignField": "_id",
+                "as": "brand_ins"
+            }},
+            {"$unwind": "$brand_ins"},
+            {"$lookup": {
+                "from": "wishlist",
+                "localField": "product_ins._id",
+                "foreignField": "product_id",
+                "as": "wishlist_ins"
+            }},
+            {"$unwind": {
+                "path": "$wishlist_ins",
+                "preserveNullAndEmptyArrays": True
+            }}
+        ]
+        price_match = {}
+        if brand_id_list:
+            price_match['brand_ins._id'] = {"$in": brand_id_list}
+        if price_from and price_to:
+            if int(price_to) > 0:
+                price_to = int(price_to) + 1
+            price_match['product_ins.list_price'] = {
+                "$gte": int(price_from),
+                "$lte": price_to
+            }
+        if price_match:
+            pipeline.append({"$match": price_match})
+        project_stage = {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$product_ins._id"},
+                "name": "$product_ins.product_name",
+                "logo": {"$ifNull": [{"$first": "$product_ins.images"}, "http://example.com/"]},
+                "sku_number": "$product_ins.sku_number_product_code_item_number",
+                "mpn": "$product_ins.mpn",
+                "msrp": {"$round": ["$product_ins.msrp", 2]},
+                "was_price": {"$round": ["$product_ins.was_price", 2]},
+                "brand_name": "$product_ins.brand_name",
+                "visible": "$product_ins.visible",
+                "end_level_category": "$name",
+                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+                "price": {"$round": ["$product_ins.list_price", 2]},
+                "currency": "$product_ins.currency",
+                "availability": "$product_ins.availability",
+                "discount": {"$round": ["$product_ins.discount", 2]},
+                "quantity": "$product_ins.quantity",
+                "category_id": {"$toString": "$product_ins.category_id"},
+                "brand_id": {"$toString": "$product_ins.brand_id"},
+                "is_wishlist": {
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": True,
+                        "else": False
                     }
                 },
-                {
-                    "$skip": skip
-                },
-                {
-                    "$limit": limit
-                }]
+                "wishlist_id": {
+                    "$cond": {
+                        "if": {"$ne": [{"$type": "$wishlist_ins"}, "missing"]},
+                        "then": {"$toString": "$wishlist_ins._id"},
+                        "else": None
+                    }
+                }
+            }
+        }
+        pipeline.append(project_stage)
+        if sort_by:
+            sorting_pipeline = [
+                {"$sort": {sort_by: int(sort_by_value)}},
+                {"$skip": skip},
+                {"$limit": limit}
+            ]
             pipeline.extend(sorting_pipeline)
         product_list = list(product_category.objects.aggregate(pipeline))
 
-    return product_list
+    # Apply discount calculation for each product, and add discount info fields
+    for prod in product_list:
+        discounted_price, discount_info = get_discounted_price(prod, discounts)
+        prod["discounted_price"] = discounted_price
+        if discount_info:
+            prod.update(discount_info)
+        else:
+            prod["applied_discount_type"] = None
+            prod["applied_discount_id"] = None
+            prod["applied_discount_value"] = None
+            prod["applied_discount_unit"] = None
 
+    return JsonResponse({"data": product_list, "message": "success", "status": True, "token": None})
 @csrf_exempt
 def obtainProductsListAutoSuggestionForDealer(request):
     """
