@@ -932,6 +932,18 @@ def obtainOrderListForDealer(request):
     start_date_str = json_request.get('start_date')
     end_date_str = json_request.get('end_date')
 
+    # --- Pagination params ---
+    page = int(json_request.get("page", 1))
+    page_size = int(json_request.get("page_size", 10))
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 10
+    max_page_size = 100
+    if page_size > max_page_size:
+        page_size = max_page_size
+    skip = (page - 1) * page_size
+
     status_match = {}
     status_match['customer_id'] = ObjectId(user_id)
     if delivery_status != "all":
@@ -940,70 +952,86 @@ def obtainOrderListForDealer(request):
         status_match['fulfilled_status'] = fulfilled_status
     if payment_status != "all":
         status_match['payment_status'] = payment_status
-    if is_reorder != None and is_reorder != "" and is_reorder != "all":
+    if is_reorder is not None and is_reorder != "" and is_reorder != "all":
         is_reorder = is_reorder.lower()
         if is_reorder == "yes":
             status_match['is_reorder'] = True
         elif is_reorder == "no":
             status_match['is_reorder'] = False
-    if start_date_str != None and start_date_str != "":
+    if start_date_str is not None and start_date_str != "":
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-
-        # Get the system's local timezone dynamically
         local_timezone = datetime.now().astimezone().tzinfo
-
-        # Localize start and end of the day to the local timezone
         start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
-        if end_date_str != None and end_date_str != "":
+        if end_date_str is not None and end_date_str != "":
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
             end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
         else:
             end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
-
-        # Convert to UTC for MongoDB query
         start_of_day_utc = start_of_day.astimezone(pytz.utc)
         end_of_day_utc = end_of_day.astimezone(pytz.utc)
-        status_match["creation_date"] =  {
-                                "$gte": start_of_day_utc,
-                                "$lte": end_of_day_utc 
-                                 }
-
-    pipeline = [
-    {"$match": status_match},  
-    {
-        "$project": {
-            "_id": 0,
-            "id": {"$toString": "$_id"},
-            "order_id" : 1,
-            "total_items" : 1,
-            "order_date" : 1,
-            "delivery_status" : 1,
-            "fulfilled_status" : 1,
-            "payment_status" : 1,
-            "amount" : 1,
-            "currency" :1,
-            "is_reorder" : 1
+        status_match["creation_date"] = {
+            "$gte": start_of_day_utc,
+            "$lte": end_of_day_utc
         }
-    }
+
+    # --- Count pipeline for total records ---
+    count_pipeline = [
+        {"$match": status_match},
+        {"$count": "total"}
     ]
-    if sort_by != None and sort_by != "":
-        pipeline2 = {
-                "$sort": {
-                    sort_by: int(sort_by_value)
-                }
+    count_result = list(order.objects.aggregate(*count_pipeline))
+    total_count = count_result[0]["total"] if count_result else 0
+
+    # --- Main pipeline with pagination ---
+    pipeline = [
+        {"$match": status_match},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "order_id": 1,
+                "total_items": 1,
+                "order_date": 1,
+                "delivery_status": 1,
+                "fulfilled_status": 1,
+                "payment_status": 1,
+                "amount": 1,
+                "currency": 1,
+                "is_reorder": 1
             }
+        }
+    ]
+    if sort_by is not None and sort_by != "":
+        pipeline.append({"$sort": {sort_by: int(sort_by_value)}})
     else:
-        pipeline2 = {
-                "$sort": {
-                    "id" : -1
-                }
-            }
-    pipeline.append(pipeline2)   
+        pipeline.append({"$sort": {"id": -1}})
+    pipeline.append({"$skip": skip})
+    pipeline.append({"$limit": page_size})
 
     order_list = list(order.objects.aggregate(*pipeline))
-    return order_list
 
+    # --- Pagination metadata ---
+    total_pages = (total_count + page_size - 1) // page_size
+    has_next = page < total_pages
+    has_previous = page > 1
 
+    return JsonResponse({
+        "data": order_list,
+        "pagination": {
+            "current_page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": has_next,
+            "has_previous": has_previous,
+            "next_page": page + 1 if has_next else None,
+            "previous_page": page - 1 if has_previous else None,
+            "showing_from": skip + 1 if total_count > 0 else 0,
+            "showing_to": min(skip + page_size, total_count)
+        },
+        "message": "success",
+        "status": True
+    })
 
 def getManufactureBankDetails(request):
     data = dict()
