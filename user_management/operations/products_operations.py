@@ -1487,14 +1487,33 @@ def obtainProductsListForDealer(request):
     product_category_id = json_request.get('product_category_id')
     manufacture_unit_id = json_request.get('manufacture_unit_id')
     industry_id_str = json_request.get('industry_id')
-    skip = int(json_request.get("skip", 0))
-    limit = int(json_request.get("limit", 20))
-    buyer_id = json_request.get('buyer_id')  # Buyer-specific discounts
+    buyer_id = json_request.get('buyer_id')
+    
+    # Pagination parameters with validation (optimized for 6-column grid)
+    page = int(json_request.get("page", 1))
+    page_size = int(json_request.get("page_size", json_request.get("limit", 30)))  # Default: 30 (6×5 grid)
+    max_page_size = 60  # Max: 60 (6×10 grid) - optimal for performance
+    
+    # Validate pagination
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 30
+    if page_size > max_page_size:
+        page_size = max_page_size
+    
+    # Ensure page_size is divisible by 6 for perfect grid layout
+    if page_size % 6 != 0:
+        page_size = ((page_size // 6) + 1) * 6  # Round up to next multiple of 6
+        if page_size > max_page_size:
+            page_size = max_page_size
+    
+    skip = (page - 1) * page_size
 
     # Filters
     filters = json_request.get('filters')
-    sort_by = json_request.get('sort_by')
-    sort_by_value = json_request.get('sort_by_value')
+    sort_by = json_request.get('sort_by', 'product_name')  # Default sort
+    sort_by_value = int(json_request.get('sort_by_value', 1))  # Default ascending
     brand_id_list = json_request.get('brand_id_list')
     if brand_id_list:
         brand_id_list = [ObjectId(bid) for bid in brand_id_list]
@@ -1517,10 +1536,79 @@ def obtainProductsListForDealer(request):
     is_buyer_view = bool(buyer_id)
     discounts = list(Discount.objects(buyer_id=buyer_id)) if is_buyer_view else []
 
+    # Build base pipeline for filtering
+    base_pipeline = [
+        {"$match": match},
+        {"$lookup": {
+            "from": "product_category",
+            "localField": "category_id",
+            "foreignField": "_id",
+            "as": "product_category_ins"
+        }},
+        {"$unwind": "$product_category_ins"},
+        {"$lookup": {
+            "from": "brand",
+            "localField": "brand_id",
+            "foreignField": "_id",
+            "as": "brand_ins"
+        }},
+        {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
+    ]
+
+    # Price & brand filter
+    price_match = {}
+    if brand_id_list:
+        price_match['brand_ins._id'] = {"$in": brand_id_list}
+    if price_from and price_to:
+        price_to = int(price_to) + 1 if int(price_to) > 0 else int(price_to)
+        price_match['list_price'] = {"$gte": int(price_from), "$lte": price_to}
+    if price_match:
+        base_pipeline.append({"$match": price_match})
+
+    # Get total count (before pagination)
+    count_pipeline = base_pipeline + [{"$count": "total"}]
+    count_result = list(product.objects.aggregate(*count_pipeline))
+    total_count = count_result[0]["total"] if count_result else 0
+
+    # Build main pipeline with pagination
+    main_pipeline = base_pipeline + [
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$toString": "$_id"},
+                "name": "$product_name",
+                "product_name": "$product_name",  # For sorting compatibility
+                "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
+                "sku_number": "$sku_number_product_code_item_number",
+                "mpn": 1,
+                "msrp": {"$round": ["$msrp", 2]},
+                "was_price": {"$round": ["$was_price", 2]},
+                "brand_name": 1,
+                "visible": 1,
+                "end_level_category": "$product_category_ins.name",
+                "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
+                "price": {"$round": ["$list_price", 2]},
+                "list_price": {"$round": ["$list_price", 2]},  # For sorting
+                "currency": 1,
+                "availability": 1,
+                "quantity": 1,
+                "category_id": {"$toString": "$category_id"},
+                "brand_id": {"$toString": "$brand_id"},
+            }
+        },
+        # Always apply sorting for consistent pagination
+        {"$sort": {sort_by: sort_by_value, "_id": 1}},  # Secondary sort by _id for consistency
+        {"$skip": skip},
+        {"$limit": page_size}
+    ]
+
+    # Fetch products
+    product_list = list(product.objects.aggregate(*main_pipeline))
+
     # Discount calculation function
     def get_discounted_price(product, discounts, is_buyer_view):
         if not is_buyer_view:
-            return product["price"], None  # Seller sees original price
+            return product["price"], None
 
         best_price = product["price"]
         applied_discount = None
@@ -1554,70 +1642,6 @@ def obtainProductsListForDealer(request):
             return best_price, applied_discount
         return product["price"], None
 
-    # Build aggregation pipeline
-    pipeline = [
-        {"$match": match},
-        {"$lookup": {
-            "from": "product_category",
-            "localField": "category_id",
-            "foreignField": "_id",
-            "as": "product_category_ins"
-        }},
-        {"$unwind": "$product_category_ins"},
-        {"$lookup": {
-            "from": "brand",
-            "localField": "brand_id",
-            "foreignField": "_id",
-            "as": "brand_ins"
-        }},
-        {"$unwind": {"path": "$brand_ins", "preserveNullAndEmptyArrays": True}},
-    ]
-
-    # Price & brand filter
-    price_match = {}
-    if brand_id_list:
-        price_match['brand_ins._id'] = {"$in": brand_id_list}
-    if price_from and price_to:
-        price_to = int(price_to) + 1 if int(price_to) > 0 else int(price_to)
-        price_match['list_price'] = {"$gte": int(price_from), "$lte": price_to}
-    if price_match:
-        pipeline.append({"$match": price_match})
-
-    # Project stage
-    pipeline.append({
-        "$project": {
-            "_id": 0,
-            "id": {"$toString": "$_id"},
-            "name": "$product_name",
-            "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
-            "sku_number": "$sku_number_product_code_item_number",
-            "mpn": 1,
-            "msrp": {"$round": ["$msrp", 2]},
-            "was_price": {"$round": ["$was_price", 2]},
-            "brand_name": 1,
-            "visible": 1,
-            "end_level_category": "$product_category_ins.name",
-            "brand_logo": {"$ifNull": ["$brand_ins.logo", ""]},
-            "price": {"$round": ["$list_price", 2]},
-            "currency": 1,
-            "availability": 1,
-            "quantity": 1,
-            "category_id": {"$toString": "$category_id"},
-            "brand_id": {"$toString": "$brand_id"},
-        }
-    })
-
-    # Sorting & pagination
-    if sort_by:
-        pipeline.extend([
-            {"$sort": {sort_by: int(sort_by_value)}},
-            {"$skip": skip},
-            {"$limit": limit}
-        ])
-
-    # Fetch products
-    product_list = list(product.objects.aggregate(*pipeline))
-
     # Apply discounts
     for prod in product_list:
         discounted_price, discount_info = get_discounted_price(prod, discounts, is_buyer_view)
@@ -1630,7 +1654,32 @@ def obtainProductsListForDealer(request):
             prod["applied_discount_value"] = None
             prod["applied_discount_unit"] = None
 
-    return JsonResponse({"data": product_list, "message": "success", "status": True, "token": None})
+    # Calculate pagination metadata
+    total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+    has_next = page < total_pages
+    has_previous = page > 1
+
+    # Return enhanced response with pagination metadata
+    return JsonResponse({
+        "data": product_list,
+        "pagination": {
+            "current_page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": has_next,
+            "has_previous": has_previous,
+            "next_page": page + 1 if has_next else None,
+            "previous_page": page - 1 if has_previous else None,
+            "showing_from": skip + 1 if total_count > 0 else 0,
+            "showing_to": min(skip + page_size, total_count)
+        },
+        "message": "success",
+        "status": True,
+        "token": None
+    })
+
+
 
 @csrf_exempt
 def obtainProductsListAutoSuggestionForDealer(request):
