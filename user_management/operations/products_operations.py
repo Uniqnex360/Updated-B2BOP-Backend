@@ -1478,7 +1478,6 @@ def obtainProductsListAutoSuggestion(request):
         print(f"Error in obtainProductsListAutoSuggestion: {str(e)}")
         return JsonResponse({"data": [], "message": "An error occurred", "status": False, "token": None})
 
-
 @csrf_exempt
 def obtainProductsListForDealer(request):
     json_request = JSONParser().parse(request)
@@ -1576,8 +1575,7 @@ def obtainProductsListForDealer(request):
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
-                "name": "$product_name",
-                "product_name": "$product_name",  # For sorting compatibility
+                "product_name": "$product_name",  # Only this, removed "name"
                 "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
                 "sku_number": "$sku_number_product_code_item_number",
                 "mpn": 1,
@@ -1678,8 +1676,6 @@ def obtainProductsListForDealer(request):
         "status": True,
         "token": None
     })
-
-
 
 @csrf_exempt
 def obtainProductsListAutoSuggestionForDealer(request):
