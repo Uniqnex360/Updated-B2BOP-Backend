@@ -1194,7 +1194,7 @@ class Scope:
 
     def _emit_class_private_warning(self, pos, name):
         warning(pos, "Global name %s matched from within class scope "
-                            "in contradiction to to Python 'class private name' rules. "
+                            "in contradiction to Python 'class private name' rules. "
                             "This may change in a future release." % name, 1)
 
     def use_utility_code(self, new_code):
@@ -2444,6 +2444,9 @@ class CClassScope(ClassScope):
         # If the type or any of its base types have Python-valued
         # C attributes, then it needs to participate in GC.
         if self.has_cyclic_pyobject_attrs and not self.directives.get('no_gc', False):
+            return True
+        if self.parent_type.is_external and not self.parent_type.is_builtin_type:
+            # It's impossible to really know - external types are often incomplete.
             return True
         base_type = self.parent_type.base_type
         if base_type and base_type.scope is not None:

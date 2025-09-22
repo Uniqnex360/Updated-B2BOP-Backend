@@ -88,7 +88,7 @@ def loginUser(request):
         response.data['_c1'] = ''
     return response
 
-
+@csrf_exempt
 @csrf_exempt
 def forgotPassword(request):
     data = dict()
