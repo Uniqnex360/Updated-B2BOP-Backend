@@ -32,6 +32,7 @@ from bson import ObjectId
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from rest_framework.parsers import JSONParser
+from mongoengine.errors import DoesNotExist, OperationError
 
 def getLocalTime(current_time):
     # Automatically detect the local timezone
@@ -271,6 +272,9 @@ def totalCheckOutAmount(request):
         "cart_items": detailed_cart  # <-- includes discount info for each item
     }
     return result
+
+
+
 @csrf_exempt
 def obtainOrderList(request):
     try:
@@ -1636,6 +1640,7 @@ def createOrUpdateTopSellings(order_id):
 
     return True
 
+
 @csrf_exempt
 def createWishList(request):
     data = dict()
@@ -1645,33 +1650,39 @@ def createWishList(request):
         product_id = json_request.get('product_id')
 
         if not user_id or not product_id:
-            return JsonResponse({"message": "user_id and product_id are required", "status": False, "data": []})
+            return JsonResponse({
+                "message": "user_id and product_id are required",
+                "status": False,
+                "data": []
+            })
 
-        # Convert to ObjectId
-        user_obj_id = ObjectId(user_id)
+        # Use string for user_id, ObjectId for product_id
         product_obj_id = ObjectId(product_id)
 
-        # Check if wishlist entry exists
-        wishlist_obj = wishlist.objects(user_id=user_obj_id, product_id=product_obj_id).first()
-
-        if not wishlist_obj:
-            # Create wishlist entry
-            wishlist_obj = wishlist(user_id=user_obj_id, product_id=product_obj_id)
-            wishlist_obj.save()
-            data['is_created'] = True
-        else:
-            # Update timestamp if already exists
-            wishlist_obj.update(set__updated_at=datetime.utcnow())
+        wishlist_obj = wishlist.objects(user_id=user_id, product_id=product_obj_id)
+        if wishlist_obj.first():
+            wishlist_obj.update_one(set__updated_at=datetime.utcnow())
+            updated_obj = wishlist_obj.first()
+            data['is_created'] = False
             data['is_updated'] = True
+        else:
+            new_wishlist = wishlist(user_id=user_id, product_id=product_obj_id)
+            new_wishlist.save()
+            updated_obj = new_wishlist
+            data['is_created'] = True
+            data['is_updated'] = False
 
-        data['wishlist_id'] = str(wishlist_obj.id)
+        data['wishlist_id'] = str(updated_obj.id)
         data['message'] = "Wishlist updated successfully"
         data['status'] = True
         return JsonResponse(data)
 
     except Exception as e:
-        return JsonResponse({"message": str(e), "status": False, "data": []})
-
+        return JsonResponse({
+            "message": str(e),
+            "status": False,
+            "data": []
+        })
 
 def deleteWishlist(request):
     data = dict()
@@ -1682,111 +1693,69 @@ def deleteWishlist(request):
 
 
 
+
+@csrf_exempt
 def obtainWishlistForBuyer(request):
-    try:
-        user_id = request.GET.get('user_id')
-        search_query = request.GET.get('search', '').strip()
+    user_id = request.GET.get('user_id')
+    search_query = request.GET.get('search', '').strip()
 
-        if not user_id:
-            return JsonResponse({"data": [], "message": "user_id is required", "status": False})
+    if not user_id:
+        return JsonResponse({"data": [], "message": "user_id is required", "status": False})
 
+    wishlist_items = wishlist.objects(user_id=user_id)
+    wish_list = []
+
+    # Defensive: build cart_product_ids safely
+    cart_product_ids = set()
+    cart_items_cursor = user_cart_item.objects(
+        user_id=user_id,
+        status="Pending"
+    ).only('product_id')
+    for item in cart_items_cursor:
         try:
-            user_obj_id = ObjectId(user_id)
-        except:
-            user_obj_id = None
+            # Try to dereference product_id
+            pid = item.product_id.id if hasattr(item.product_id, 'id') else item.product_id
+            cart_product_ids.add(str(pid))
+        except Exception:
+            # Broken cart item, delete it
+            item.delete()
+            continue
 
-        # Base match stage
-        match_stage = {
-            "$match": {
-                "$expr": {
-                    "$or": [
-                        {"$eq": ["$user_id", user_obj_id]} if user_obj_id else {"$eq": ["$user_id", ""]},
-                        {"$eq": ["$user_id", user_id]}
-                    ]
-                }
-            }
-        }
+    for item in wishlist_items:
+        try:
+            if hasattr(item.product_id, 'fetch'):
+                product = item.product_id.fetch()
+            else:
+                product = item.product_id
+            if not product or not hasattr(product, 'id'):
+                item.delete()
+                continue
+            if search_query:
+                product_name = (product.product_name or '').lower()
+                brand_name = (product.brand_name or '').lower()
+                if search_query.lower() not in product_name and search_query.lower() not in brand_name:
+                    continue
+            wish_list.append({
+                "id": str(item.id),
+                "product_id": str(product.id),
+                "name": product.product_name,
+                "price": product.list_price or 0.0,
+                "currency": product.currency,
+                "primary_image": product.images[0] if product.images else None,
+                "sku_number": product.sku_number_product_code_item_number,
+                "mpn_number": product.mpn,
+                "brand_name": product.brand_name,
+                "availability": product.availability,
+                "was_price": product.was_price,
+                "discount": product.discount,
+                "msrp": product.msrp,
+                "in_cart": str(product.id) in cart_product_ids
+            })
+        except Exception:
+            item.delete()
+            continue
 
-        # Base pipeline (all wishlist)
-        base_pipeline = [
-            match_stage,
-            {"$lookup": {
-                "from": "product",
-                "let": {"pid": "$product_id"},
-                "pipeline": [
-                    {
-                        "$match": {
-                            "$expr": {
-                                "$or": [
-                                    {"$eq": ["$_id", "$$pid"]},
-                                    {"$eq": [{"$toString": "$_id"}, "$$pid"]}
-                                ]
-                            }
-                        }
-                    }
-                ],
-                "as": "product_ins"
-            }},
-            {"$unwind": "$product_ins"},
-            {
-                "$project": {
-                    "_id": 0,
-                    "id": {"$toString": "$_id"},
-                    "product_id": {"$toString": "$product_ins._id"},
-                    "name": "$product_ins.product_name",
-                    "price": {"$ifNull": ["$product_ins.list_price", 0.0]},
-                    "currency": "$product_ins.currency",
-                    "primary_image": {"$first": "$product_ins.images"},
-                    "sku_number": "$product_ins.sku_number_product_code_item_number",
-                    "mpn_number": "$product_ins.mpn",
-                    "brand_name": "$product_ins.brand_name",
-                    "availability": "$product_ins.availability",
-                    "was_price": "$product_ins.was_price",
-                    "discount": "$product_ins.discount",
-                    "msrp": "$product_ins.msrp"
-                }
-            }
-        ]
-
-        # If search query exists, build search pipeline
-        if search_query:
-            search_pipeline = base_pipeline[:-1] + [  # keep all stages except projection for now
-                {
-                    "$match": {
-                        "$or": [
-                            {"product_ins.product_name": {"$regex": search_query, "$options": "i"}},
-                            {"product_ins.brand_name": {"$regex": search_query, "$options": "i"}}
-                        ]
-                    }
-                },
-                base_pipeline[-1]  # add projection
-            ]
-            wish_list = list(wishlist.objects.aggregate(*search_pipeline))
-
-            # If search returns empty, fallback to base pipeline (all products)
-            if not wish_list:
-                wish_list = list(wishlist.objects.aggregate(*base_pipeline))
-        else:
-            wish_list = list(wishlist.objects.aggregate(*base_pipeline))
-
-        # Fetch cart items
-        cart_items_cursor = user_cart_item.objects(
-            user_id=user_obj_id if user_obj_id else user_id,
-            status="Pending"
-        ).only('product_id')
-        cart_product_ids = set(str(item.product_id) for item in cart_items_cursor)
-
-        # Mark in_cart
-        for item in wish_list:
-            item['in_cart'] = item['product_id'] in cart_product_ids
-
-        return JsonResponse({"data": wish_list, "message": "success", "status": True})
-
-    except Exception as e:
-        return JsonResponse({"data": [], "message": str(e), "status": False})
-
-
-
+    return JsonResponse({"data": wish_list, "message": "success", "status": True})
 
 @csrf_exempt
 def moveCartItemsToWishlist(request):
