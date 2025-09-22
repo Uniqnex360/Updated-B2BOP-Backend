@@ -1693,7 +1693,6 @@ def deleteWishlist(request):
 
 
 
-
 @csrf_exempt
 def obtainWishlistForBuyer(request):
     user_id = request.GET.get('user_id')
@@ -1713,13 +1712,42 @@ def obtainWishlistForBuyer(request):
     ).only('product_id')
     for item in cart_items_cursor:
         try:
-            # Try to dereference product_id
             pid = item.product_id.id if hasattr(item.product_id, 'id') else item.product_id
             cart_product_ids.add(str(pid))
         except Exception:
-            # Broken cart item, delete it
             item.delete()
             continue
+
+    # --- Discount logic: fetch all discounts for this buyer ---
+    discounts = list(Discount.objects(buyer_id=user_id))
+
+    def get_discounted_price(product, discounts):
+        best_price = product.list_price or 0.0
+        applied_discount = None
+        for discount in discounts:
+            applies = False
+            if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == str(product.id):
+                applies = True
+            elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(getattr(product, "category_id", "")):
+                applies = True
+            elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(getattr(product, "brand_id", "")):
+                applies = True
+            if applies and getattr(product, "quantity", 1) >= discount.min_quantity:
+                if discount.discount_type == "%":
+                    discounted = round(best_price * (1 - discount.discount_value / 100), 2)
+                else:
+                    discounted = max(round(best_price - discount.discount_value, 2), 0)
+                if discounted < best_price:
+                    best_price = discounted
+                    applied_discount = {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+        if applied_discount:
+            return best_price, applied_discount
+        return best_price, None
 
     for item in wishlist_items:
         try:
@@ -1735,11 +1763,15 @@ def obtainWishlistForBuyer(request):
                 brand_name = (product.brand_name or '').lower()
                 if search_query.lower() not in product_name and search_query.lower() not in brand_name:
                     continue
-            wish_list.append({
+
+            # --- Apply discount logic ---
+            discounted_price, discount_info = get_discounted_price(product, discounts)
+            wish_item = {
                 "id": str(item.id),
                 "product_id": str(product.id),
                 "name": product.product_name,
                 "price": product.list_price or 0.0,
+                "discounted_price": discounted_price,
                 "currency": product.currency,
                 "primary_image": product.images[0] if product.images else None,
                 "sku_number": product.sku_number_product_code_item_number,
@@ -1750,7 +1782,16 @@ def obtainWishlistForBuyer(request):
                 "discount": product.discount,
                 "msrp": product.msrp,
                 "in_cart": str(product.id) in cart_product_ids
-            })
+            }
+            if discount_info:
+                wish_item.update(discount_info)
+            else:
+                wish_item["applied_discount_type"] = None
+                wish_item["applied_discount_id"] = None
+                wish_item["applied_discount_value"] = None
+                wish_item["applied_discount_unit"] = None
+
+            wish_list.append(wish_item)
         except Exception:
             item.delete()
             continue
