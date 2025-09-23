@@ -13,7 +13,7 @@ from user_management.operations.user_operations import createORUpdateManufacture
 
 from user_management.operations.products_operations import obtainProductsListAutoSuggestion,obtainProductsListAutoSuggestionForDealer
 from user_management.operations.products_operations import obtainProductCategoryList,buyerProductDiscount,   obtainProductsList, obtainbrandList, productSearch, productSuggestions,obtainProductsListAutoSuggestion, upload_file, obtainProductDetails, save_file, getProductsByTopLevelCategory, updateProduct, getColumnFormExcel, updateBulkProduct, obtainProductsListForDealer, productCountForDealer, obtainProductCategoryListForDealer, get_related_products, get_highest_priced_product, obtainEndlevelcategoryList, upload_file_new, save_xl_data_new
-from user_management.operations.products_operations import getIndustryCategoryBrand,get_discounts,add_discount,delete_discount,seller_dashboard_view,buyerDiscount_Product,buyerDiscount_brands_list,buyerDiscount_categories_list
+from user_management.operations.products_operations import getIndustryCategoryBrand,get_discounts,add_discount,delete_discount,seller_dashboard_view,sales_analytics_all_timeframes,buyerDiscount_Product,buyerDiscount_brands_list,buyerDiscount_categories_list
 from user_management.operations.order_and_purchase_operations import editDealerDetails, deleteDealerDetails,moveCartItemsToWishlist
 
 urlpatterns = [
@@ -38,8 +38,9 @@ urlpatterns = [
  path('getIndustryCategoryBrand/', getIndustryCategoryBrand, name='getIndustryCategoryBrand'),
  
 path('seller_dashboard_kpis/', seller_dashboard_view, name='seller_dashboard_kpis'),
-
-
+    path('sales_analytics_all_timeframes/', sales_analytics_all_timeframes, name='sales_analytics_all_timeframes'),
+    
+    
     #Manufacture Unit creation
     path('createORUpdateManufactureUnit/',createORUpdateManufactureUnit,name="createORUpdateManufactureUnit"),
     path('obtainManufactureUnitList/',obtainManufactureUnitList,name="obtainManufactureUnitList"),

@@ -432,6 +432,8 @@ def getIndustryCategoryBrand(request):
     except Exception as e:
         return JsonResponse({"status": False, "error": str(e)}, status=400)
 
+
+
 @csrf_exempt
 def seller_dashboard_view(request):
     """
@@ -620,6 +622,113 @@ def seller_dashboard_view(request):
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
+
+
+
+from datetime import datetime
+from collections import defaultdict
+
+
+@csrf_exempt
+def sales_analytics_all_timeframes(request):
+    """
+    GET params:
+    - manufacture_unit_id (required)
+    - start_date (optional, YYYY-MM-DD)
+    - end_date (optional, YYYY-MM-DD)
+    - payment_status (optional, default: all)
+    """
+    if request.method != "GET":
+        return JsonResponse({"status": False, "message": "Only GET allowed"}, status=405)
+
+    try:
+        manufacture_unit_id = request.GET.get("manufacture_unit_id")
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+        payment_status = request.GET.get("payment_status")  # e.g. "Completed", "Pending", "Paid", or "all"
+
+        if not manufacture_unit_id:
+            return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
+
+        # Build query filter
+        match = {"manufacture_unit_id_str": manufacture_unit_id}
+        if payment_status and payment_status != "all":
+            match["payment_status"] = payment_status
+        else:
+            match["payment_status"] = {"$in": ["Completed", "Pending", "Paid"]}
+
+        if start_date or end_date:
+            date_filter = {}
+            if start_date:
+                date_filter["$gte"] = datetime.strptime(start_date, "%Y-%m-%d")
+            if end_date:
+                date_filter["$lte"] = datetime.strptime(end_date, "%Y-%m-%d")
+            match["creation_date"] = date_filter
+
+        # Fetch orders from DB
+        order_list = list(order.objects(__raw__=match).only(
+            "creation_date", "payment_status", "amount"
+        ).as_pymongo())
+
+        def get_period(dt, group_by):
+            if group_by == "daily":
+                return dt.strftime("%Y-%m-%d")
+            elif group_by == "weekly":
+                return f"{dt.year}-W{dt.isocalendar()[1]:02d}"
+            elif group_by == "monthly":
+                return dt.strftime("%Y-%m")
+            elif group_by == "yearly":
+                return dt.strftime("%Y")
+            else:
+                return "total"
+
+        def aggregate_by(order_list, group_by):
+            analytics = defaultdict(lambda: defaultdict(float))
+            for ord_doc in order_list:
+                try:
+                    dt = ord_doc["creation_date"]
+                    if isinstance(dt, str):
+                        dt = datetime.strptime(dt[:10], "%Y-%m-%d")
+                except Exception:
+                    continue
+                period = get_period(dt, group_by)
+                status = ord_doc.get("payment_status", "Unknown")
+                amount = float(ord_doc.get("amount", 0) or 0)
+                analytics[period][status] += amount
+            result = []
+            for period, status_dict in sorted(analytics.items()):
+                period_data = {"period": period}
+                for status in ["Completed", "Pending", "Paid"]:
+                    period_data[status] = status_dict.get(status, 0)
+                period_data["total"] = sum(status_dict.values())
+                result.append(period_data)
+            return result
+
+        daily = aggregate_by(order_list, "daily")
+        weekly = aggregate_by(order_list, "weekly")
+        monthly = aggregate_by(order_list, "monthly")
+        yearly = aggregate_by(order_list, "yearly")
+
+        total = defaultdict(float)
+        for ord_doc in order_list:
+            status = ord_doc.get("payment_status", "Unknown")
+            amount = float(ord_doc.get("amount", 0) or 0)
+            total[status] += amount
+        total_summary = {status: total.get(status, 0) for status in ["Completed", "Pending", "Paid"]}
+        total_summary["total"] = sum(total_summary.values())
+
+        return JsonResponse({
+            "status": True,
+            "daily": daily,
+            "weekly": weekly,
+            "monthly": monthly,
+            "yearly": yearly,
+            "total": total_summary
+        })
+
+    except Exception as e:
+        return JsonResponse({"status": False, "message": str(e)}, status=500)
+
 
 
 @csrf_exempt

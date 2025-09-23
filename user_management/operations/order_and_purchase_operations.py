@@ -479,7 +479,8 @@ def obtainOrderList(request):
  
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
-    
+
+  
 @api_view(('GET', 'POST'))
 def exportOrders(request):
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
@@ -549,6 +550,8 @@ def exportOrders(request):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
 
     return response
+
+
 
 
 def obtainDealerlist(request):
