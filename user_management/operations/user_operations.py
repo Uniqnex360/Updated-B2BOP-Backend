@@ -478,7 +478,6 @@ def getUserName(manufacture_unit_name, name):
     return username
 
 import ast
-from django.http import JsonResponse
 def generateUserName(request):
     data = dict()
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
@@ -500,6 +499,8 @@ def generateUserName(request):
 
     data['username'] = username
     return JsonResponse(data)   
+
+
     # l =[]
     # user_list = DatabaseModel.list_documents(order.objects,{},["id","delivery_status","fulfilled_status","payment_status"])
     # for i in user_list:
@@ -597,74 +598,51 @@ def send_email(to_email, subject, body):
     except Exception as e:
         print(f"Failed to send email: {e}")
 
+        
 @csrf_exempt
-@api_view(['POST']) 
 def createUser(request):
-    try:
-        json_request = JSONParser().parse(request)
+    data = dict()
+    json_request = JSONParser().parse(request)
+    
+    username = json_request['username']
+    password = json_request['username']
+    manufacture_unit_id = json_request['manufacture_unit_id']
+    role_name = json_request.get('role_name')
+    industry_list = json_request.get("industry_list")
+    # username = "Test 01"
+    # password = "1"
+    # email = "sivanandham.skks@gmail.com"
+    email = (json_request['email']).lower()
+   
+    if role_name != None and role_name == "super_admin":
+        user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","is_default" : True})
+        manufacture_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "manufacturer_admin"},['id']).id
 
-        username = json_request['username']
-        password = json_request['password']
-        manufacture_unit_id = json_request['manufacture_unit_id']
-        role_name = json_request.get('role_name')
-        industry_list = json_request.get("industry_list")
-        email = (json_request['email']).lower()
-        name = json_request['name']
+        DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : manufacture_admin_role_id})
+        roleName = "Seller"
 
-        validate_email(email)
+    else:
+        user_creation_template_obj = DatabaseModel.get_document(mail_template.objects,{"code" : "user_creation","manufacture_unit_id_str" : manufacture_unit_id})
+        dealer_admin_role_id = DatabaseModel.get_document(role.objects,{"name" : "dealer_admin"},['id']).id
 
-        if DatabaseModel.get_document(user.objects, {"email": email}):
-            return Response({"error": "Email already exists"}, status=400)
+        user_obj = DatabaseModel.save_documents(user,{"first_name" : json_request['name'],"email" : email,"username" : json_request['username'],"password"  : json_request['username'],"manufacture_unit_id" : ObjectId(manufacture_unit_id),"role_id" : dealer_admin_role_id})
 
-        if DatabaseModel.get_document(user.objects, {"username": username}):
-            return Response({"error": "Username already exists"}, status=400)
 
-        is_super_admin = role_name == "super_admin"
-        role_query = {"name": "manufacturer_admin"} if is_super_admin else {"name": "dealer_admin"}
-        template_query = (
-            {"code": "user_creation", "is_default": True}
-            if is_super_admin else
-            {"code": "user_creation", "manufacture_unit_id_str": manufacture_unit_id}
-        )
-        roleName = "Seller" if is_super_admin else "Buyer"
+        if industry_list != None and industry_list != []:
+            industry_list = [ObjectId(ins) for ins in industry_list]
+            DatabaseModel.save_documents(user_industry_config,{"user_id_str" : str(user_obj.id),"allowed_industry_list" : industry_list})
 
-        role_obj = DatabaseModel.get_document(role.objects, role_query)
-        if not role_obj:
-            return Response({"error": f"Role not found for query: {role_query}"}, status=400)
+        roleName = "Buyer"
 
-        template_obj = DatabaseModel.get_document(mail_template.objects, template_query)
-        if not template_obj:
-            return Response({"error": "Mail template not found."}, status=400)
+    subject = user_creation_template_obj.subject.format(role=roleName)
 
-        user_obj = DatabaseModel.save_documents(user, {
-            "first_name": name,
-            "email": email,
-            "username": username,
-            "password": make_password(password),
-            "manufacture_unit_id": ObjectId(manufacture_unit_id),
-            "role_id": role_obj._id
-        })
+    body = user_creation_template_obj.default_template.format(name = json_request['name'], role=roleName, email=email, username = username, password = password)
 
-        if not is_super_admin and industry_list:
-            industry_ids = [ObjectId(ins) for ins in industry_list]
-            DatabaseModel.save_documents(user_industry_config, {
-                "user_id_str": str(user_obj._id),
-                "allowed_industry_list": industry_ids
-            })
+    send_email(email, subject, body)
+    data['message'] = "User created and email sent!"
 
-        subject = template_obj.subject.format(role=roleName)
-        body = template_obj.default_template.format(
-            name=name, role=roleName, email=email, username=username, password=password
-        )
-        send_email(email, subject, body)
+    return data
 
-        return Response({"message": "User created and email sent!"}, status=201)
-
-    except ValidationError:
-        return Response({"error": "Invalid email format"}, status=400)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
 
 def getAddressFormat(address_id):
     pipeline = [
