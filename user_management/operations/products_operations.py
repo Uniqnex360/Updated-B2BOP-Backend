@@ -739,6 +739,8 @@ def obtainbrandList(request):
     product_category_id = request.GET.get('product_category_id')
     role_name = request.GET.get('role_name')
     is_parent = request.GET.get('is_parent')
+    buyer_id = request.GET.get('buyer_id')  # <-- Accept buyer_id for discount logic
+
     if is_parent not in [None, "", False, "false", "False"]:
         is_parent = True
     else:
@@ -758,11 +760,10 @@ def obtainbrandList(request):
     if product_category_id:
         try:
             category_oid = ObjectId(product_category_id)
-
             if is_parent:
                 end_level_category_ids = get_end_level_category_ids(category_oid)
                 if not end_level_category_ids:
-                    return []
+                    return JsonResponse({"data": [], "message": "success", "status": True, "token": None})
                 lookup_match_conditions.append({
                     "$expr": {"$in": ["$category_id", end_level_category_ids]}
                 })
@@ -771,7 +772,7 @@ def obtainbrandList(request):
                     "$expr": {"$eq": ["$category_id", category_oid]}
                 })
         except Exception as e:
-            return []
+            return JsonResponse({"data": [], "message": "success", "status": True, "token": None})
 
     if lookup_match_conditions:
         match_obj = {"$match": {"$and": lookup_match_conditions}}
@@ -810,42 +811,47 @@ def obtainbrandList(request):
             "$project": {
                 "_id": 0,
                 "id": {"$toString": "$_id"},
-                # "name": 1,   # ❌ old field projection (commented)
-                # "products_count": 1,  # kept
-                # "brand_name": 1,      # ❌ not in DB
-                # "brand_logo": 1,      # ❌ not in DB
                 "name": {"$ifNull": ["$name", ""]},
-                "logo": {"$ifNull": ["$logo", ""]},    # The brand without logo or photo or name,it won't break.   
+                "logo": {"$ifNull": ["$logo", ""]},
                 "products_count": 1
             }
         },
-        {"$sort": {"name": 1}}  # ✅ added sorting by name
+        {"$sort": {"name": 1}}
     ]
 
     brand_list = list(brand.objects.aggregate(*pipeline))
+
+    # --- Add discount info for each brand ---
+    if buyer_id:
+        discounts = list(Discount.objects(buyer_id=buyer_id, type="Brand"))
+        brand_discount_map = {str(d.brand_id.id): d for d in discounts if d.brand_id}
+        for b in brand_list:
+            discount = brand_discount_map.get(b["id"])
+            if discount:
+                b["discounted"] = True
+                b["discount_value"] = discount.discount_value
+                b["discount_unit"] = discount.discount_type
+                b["discount_id"] = str(discount.id)
+            else:
+                b["discounted"] = False
+                b["discount_value"] = None
+                b["discount_unit"] = None
+                b["discount_id"] = None
+
     return JsonResponse({"data": brand_list, "message": "success", "status": True, "token": None})
 
-
-def get_end_level_category_ids(category_oid):
+def get_end_level_category_ids(category_oid, buyer_id=None):
     pipeline = [
-            {"$match": {"_id": category_oid}},
-            {
-                "$project": {
-                    "_id": 0,
-                    "end_level": 1
-                }
-            }
-        ]
-
-        # Execute the aggregation pipeline
+        {"$match": {"_id": category_oid}},
+        {"$project": {"_id": 0, "end_level": 1}}
+    ]
     product_category_obj = list(product_category.objects.aggregate(*pipeline))
-    if product_category_obj == []:
+    if not product_category_obj:
         return []
 
     if product_category_obj[0]['end_level'] == True:
-        return [category_oid]
+        category_ids = [category_oid]
     else:
-        # Use $graphLookup to find all descendant end-level categories
         pipeline = [
             {"$match": {"_id": category_oid}},
             {
@@ -855,15 +861,12 @@ def get_end_level_category_ids(category_oid):
                     "connectFromField": "_id",
                     "connectToField": "parent_category_id",
                     "as": "descendants",
-                    "maxDepth": 10,  # Adjust as needed
+                    "maxDepth": 10,
                     "depthField": "depth"
                 }
             },
-            # Unwind the descendants to treat each descendant separately
             {"$unwind": "$descendants"},
-            # Match only the end-level categories
             {"$match": {"descendants.end_level": True}},
-            # Group to collect all end-level category IDs
             {
                 "$group": {
                     "_id": None,
@@ -871,13 +874,37 @@ def get_end_level_category_ids(category_oid):
                 }
             }
         ]
-
-        # Execute the aggregation pipeline
         result = list(product_category.objects.aggregate(*pipeline))
-        if result:
-            return result[0]['end_level_category_ids']
-        else:
-            return []
+        category_ids = result[0]['end_level_category_ids'] if result else []
+
+    # --- Add discount info for each category ---
+    categories_with_discount = []
+    if buyer_id:
+        discounts = list(Discount.objects(buyer_id=buyer_id, type="Category"))
+        category_discount_map = {str(d.category_id.id): d for d in discounts if d.category_id}
+        for cid in category_ids:
+            cid_str = str(cid)
+            discount = category_discount_map.get(cid_str)
+            cat_obj = product_category.objects(id=cid).first()
+            cat_info = {
+                "id": cid_str,
+                "name": cat_obj.name if cat_obj else "",
+            }
+            if discount:
+                cat_info["discounted"] = True
+                cat_info["discount_value"] = discount.discount_value
+                cat_info["discount_unit"] = discount.discount_type
+                cat_info["discount_id"] = str(discount.id)
+            else:
+                cat_info["discounted"] = False
+                cat_info["discount_value"] = None
+                cat_info["discount_unit"] = None
+                cat_info["discount_id"] = None
+            categories_with_discount.append(cat_info)
+        return categories_with_discount
+    else:
+        # Just return category IDs if no buyer_id
+        return [{"id": str(cid)} for cid in category_ids]
 
 #seller side 
 @csrf_exempt
@@ -1791,6 +1818,7 @@ def obtainProductsListAutoSuggestionForDealer(request):
     """
     Auto-suggestion API for dealer-side products.
     Filters by manufacture_unit_id + optional category, brand, price range.
+    Adds buyer discount logic for brand, category, and product.
     """
     try:
         json_request = JSONParser().parse(request)
@@ -1800,6 +1828,7 @@ def obtainProductsListAutoSuggestionForDealer(request):
         brand_id_list = json_request.get('brand_id_list', [])
         price_from = json_request.get('price_from')
         price_to = json_request.get('price_to')
+        buyer_id = json_request.get('buyer_id')  # <-- Add buyer_id for discount logic
 
         if not manufacture_unit_id:
             return JsonResponse({"data": [], "message": "manufacture_unit_id required", "status": False})
@@ -1860,7 +1889,11 @@ def obtainProductsListAutoSuggestionForDealer(request):
                 "logo": {"$ifNull": [{"$first": "$images"}, "http://example.com/"]},
                 "category_name": "$category_info.name",
                 "brand_name": "$brand_info.name",
-                "brand_logo": "$brand_info.logo"
+                "brand_logo": "$brand_info.logo",
+                "price": {"$round": ["$list_price", 2]},
+                "quantity": 1,
+                "category_id": {"$toString": "$category_id"},
+                "brand_id": {"$toString": "$brand_id"},
             }
         })
 
@@ -1868,12 +1901,62 @@ def obtainProductsListAutoSuggestionForDealer(request):
         pipeline.append({"$sort": {"name": 1}})
 
         results = list(product.objects.aggregate(pipeline))
+
+        # --- Buyer Discount Logic ---
+        is_buyer_view = bool(buyer_id)
+        discounts = list(Discount.objects(buyer_id=buyer_id)) if is_buyer_view else []
+
+        def get_discounted_price(product, discounts, is_buyer_view):
+            if not is_buyer_view:
+                return product.get("price", 0), None
+
+            best_price = product.get("price", 0)
+            applied_discount = None
+
+            for discount in discounts:
+                applies = False
+                if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["id"]:
+                    applies = True
+                elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                    applies = True
+                elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                    applies = True
+
+                if applies and product.get("quantity", 1) >= discount.min_quantity:
+                    if discount.discount_type == "%":
+                        discounted = round(product["price"] * (1 - discount.discount_value / 100), 2)
+                    else:
+                        discounted = max(round(product["price"] - discount.discount_value, 2), 0)
+
+                    if discounted < best_price:
+                        best_price = discounted
+                        applied_discount = {
+                            "applied_discount_type": discount.type,
+                            "applied_discount_id": str(discount.id),
+                            "applied_discount_value": discount.discount_value,
+                            "applied_discount_unit": discount.discount_type
+                        }
+
+            if applied_discount:
+                return best_price, applied_discount
+            return product.get("price", 0), None
+
+        # Apply discounts to each product in results
+        for prod in results:
+            discounted_price, discount_info = get_discounted_price(prod, discounts, is_buyer_view)
+            prod["discounted_price"] = discounted_price
+            if discount_info:
+                prod.update(discount_info)
+            else:
+                prod["applied_discount_type"] = None
+                prod["applied_discount_id"] = None
+                prod["applied_discount_value"] = None
+                prod["applied_discount_unit"] = None
+
         return JsonResponse({"data": results, "message": "success", "status": True})
     except Exception as e:
         print("Error in dealer auto suggestion:", str(e))
         return JsonResponse({"data": [], "message": "An error occurred", "status": False})
-
-
 
 @csrf_exempt
 def productCountForDealer(request):
