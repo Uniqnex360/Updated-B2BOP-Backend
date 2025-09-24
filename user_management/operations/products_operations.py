@@ -1813,6 +1813,8 @@ def obtainProductsListForDealer(request):
         "token": None
     })
 
+
+
 @csrf_exempt
 def obtainProductsListAutoSuggestionForDealer(request):
     """
@@ -2796,6 +2798,7 @@ def productSearch(request):
         brand_id = request.GET.get("brand_id")
         price_from = request.GET.get("price_from")
         price_to = request.GET.get("price_to")
+        buyer_id = request.GET.get("buyer_id")  # <-- ADD THIS
     else:
         json_request = JSONParser().parse(request)
         search_query = re.escape(json_request.get("search_query", "").strip())
@@ -2809,6 +2812,7 @@ def productSearch(request):
         brand_id = json_request.get("brand_id")
         price_from = json_request.get("price_from")
         price_to = json_request.get("price_to")
+        buyer_id = json_request.get("buyer_id")  # <-- ADD THIS
 
     regex_query = ".*" if not search_query else f".*{search_query}.*"
 
@@ -2940,6 +2944,8 @@ def productSearch(request):
                 "logo": {"$ifNull": [{"$first": "$images"}, ""]},
                 "images": 1,
                 "breadcrumbs": 1,
+                "category_id": {"$toString": "$category_id"},  # <-- ADD THIS
+                "brand_id": {"$toString": "$brand_id"},        # <-- ADD THIS
                 "is_wishlist": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, True, False]},
                 "wishlist_id": {"$cond": [{"$gt": [{"$type": "$wishlist_info"}, "missing"]}, {"$toString": "$wishlist_info._id"}, None]}
             }
@@ -2960,9 +2966,61 @@ def productSearch(request):
         pipeline.append({"$limit": limit})
 
     results = list(product.objects.aggregate(pipeline))
+
+    # --- ADD THE SAME DISCOUNT LOGIC AS obtainProductsListForDealer ---
+    is_buyer_view = bool(buyer_id)
+    discounts = list(Discount.objects(buyer_id=buyer_id)) if is_buyer_view else []
+
+    # Discount calculation function (same as obtainProductsListForDealer)
+    def get_discounted_price(product, discounts, is_buyer_view):
+        if not is_buyer_view:
+            return product["price"], None
+
+        best_price = product["price"]
+        applied_discount = None
+
+        for discount in discounts:
+            applies = False
+
+            if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["id"]:
+                applies = True
+            elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                applies = True
+            elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                applies = True
+
+            if applies and product.get("quantity", 1) >= discount.min_quantity:
+                if discount.discount_type == "%":
+                    discounted = round(product["price"] * (1 - discount.discount_value / 100), 2)
+                else:
+                    discounted = max(round(product["price"] - discount.discount_value, 2), 0)
+
+                if discounted < best_price:
+                    best_price = discounted
+                    applied_discount = {
+                        "applied_discount_type": discount.type,
+                        "applied_discount_id": str(discount.id),
+                        "applied_discount_value": discount.discount_value,
+                        "applied_discount_unit": discount.discount_type
+                    }
+
+        if applied_discount:
+            return best_price, applied_discount
+        return product["price"], None
+
+    # Apply discounts to each product
+    for prod in results:
+        discounted_price, discount_info = get_discounted_price(prod, discounts, is_buyer_view)
+        prod["discounted_price"] = discounted_price
+        if discount_info:
+            prod.update(discount_info)
+        else:
+            prod["applied_discount_type"] = None
+            prod["applied_discount_id"] = None
+            prod["applied_discount_value"] = None
+            prod["applied_discount_unit"] = None
+
     return JsonResponse({"data": results, "message": "success", "status": True, "token": None})
-
-
 
 @csrf_exempt
 def productSuggestions(request):
@@ -2970,12 +3028,14 @@ def productSuggestions(request):
         search_query = request.GET.get("search_query", "").strip()
         manufacture_unit_id = request.GET.get("manufacture_unit_id")
         role_name = request.GET.get("role_name")
+        buyer_id = request.GET.get("buyer_id")
         limit = int(request.GET.get("limit", 10))
     else:
         json_request = JSONParser().parse(request)
         search_query = json_request.get("search_query", "").strip()
         manufacture_unit_id = json_request.get("manufacture_unit_id")
         role_name = json_request.get("role_name")
+        buyer_id = json_request.get("buyer_id")
         limit = int(json_request.get("limit", 10))
 
     if not search_query:
@@ -3012,6 +3072,8 @@ def productSuggestions(request):
 
     pipeline = [
         {"$match": {"$and": base_conditions}},
+        
+        # Lookup category information
         {
             "$lookup": {
                 "from": "product_category",
@@ -3021,6 +3083,8 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
+        
+        # Lookup brand information
         {
             "$lookup": {
                 "from": "brand",
@@ -3030,6 +3094,8 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$brand_info", "preserveNullAndEmptyArrays": True}},
+        
+        # Lookup wishlist information
         {
             "$lookup": {
                 "from": "wishlist",
@@ -3039,46 +3105,132 @@ def productSuggestions(request):
             }
         },
         {"$unwind": {"path": "$wishlist_info", "preserveNullAndEmptyArrays": True}},
-        {
-            "$project": {
-                "_id": 0,
-                "id": {"$toString": "$_id"},
-                "product_name": 1,
-                "brand_name": "$brand_info.name",
-                "brand_logo": "$brand_info.logo",
-                "logo": {"$ifNull": [{"$first": "$images"}, ""]},
-                "mpn": 1,
-                "sku_number_product_code_item_number": 1,
-                "end_level_category": "$category_info.name",
-                "price": "$list_price",
-                "was_price": 1,
-                "discount": {"$round": ["$discount", 2]},
-                "availability": 1,
-                "currency": 1,
-                "msrp": 1,
-                "is_wishlist": {
-                    "$cond": [
-                        {"$gt": [{"$type": "$wishlist_info"}, "missing"]},
-                        True,
-                        False
-                    ]
-                },
-                "wishlist_id": {
-                    "$cond": [
-                        {"$gt": [{"$type": "$wishlist_info"}, "missing"]},
-                        {"$toString": "$wishlist_info._id"},
-                        None
-                    ]
-                }
-            }
-        },
-        {"$sort": {"product_name": 1}},
-        {"$limit": limit}
     ]
 
-    suggestions = list(product.objects.aggregate(pipeline))
-    return JsonResponse({"data": suggestions, "message": "success", "status": True, "token": None})
+    # Final projection
+    projection_stage = {
+        "$project": {
+            "_id": 0,
+            "id": {"$toString": "$_id"},
+            "product_name": 1,
+            "brand_name": "$brand_info.name",
+            "brand_logo": "$brand_info.logo",
+            "logo": {"$ifNull": [{"$first": "$images"}, ""]},
+            "mpn": 1,
+            "sku_number_product_code_item_number": 1,
+            "end_level_category": "$category_info.name",
+            "price": "$list_price",
+            "was_price": 1,
+            "discount": {"$round": ["$discount", 2]},
+            "availability": 1,
+            "currency": 1,
+            "msrp": 1,
+            "quantity": 1,
+            "category_id": {"$toString": "$category_id"},
+            "brand_id": {"$toString": "$brand_id"},
+            "is_wishlist": {
+                "$cond": [
+                    {"$gt": [{"$type": "$wishlist_info"}, "missing"]},
+                    True,
+                    False
+                ]
+            },
+            "wishlist_id": {
+                "$cond": [
+                    {"$gt": [{"$type": "$wishlist_info"}, "missing"]},
+                    {"$toString": "$wishlist_info._id"},
+                    None
+                ]
+            }
+        }
+    }
 
+    pipeline.append(projection_stage)
+    
+    # Add sorting and limit
+    pipeline.extend([
+        {"$sort": {"product_name": 1}},
+        {"$limit": limit}
+    ])
+
+    try:
+        suggestions = list(product.objects.aggregate(pipeline))
+        
+        # --- Apply the same discount logic as obtainProductsListForDealer ---
+        is_buyer_view = bool(buyer_id)
+        discounts = list(Discount.objects(buyer_id=buyer_id)) if is_buyer_view else []
+
+        # Discount calculation function (same as obtainProductsListForDealer)
+        def get_discounted_price(product, discounts, is_buyer_view):
+            if not is_buyer_view:
+                return product["price"], None
+
+            best_price = product["price"]
+            applied_discount = None
+
+            for discount in discounts:
+                applies = False
+
+                if discount.type == "Product" and discount.product_id and str(discount.product_id.id) == product["id"]:
+                    applies = True
+                elif discount.type == "Category" and discount.category_id and str(discount.category_id.id) == str(product.get("category_id", "")):
+                    applies = True
+                elif discount.type == "Brand" and discount.brand_id and str(discount.brand_id.id) == str(product.get("brand_id", "")):
+                    applies = True
+
+                if applies and product.get("quantity", 1) >= discount.min_quantity:
+                    if discount.discount_type == "%":
+                        discounted = round(product["price"] * (1 - discount.discount_value / 100), 2)
+                    else:
+                        discounted = max(round(product["price"] - discount.discount_value, 2), 0)
+
+                    if discounted < best_price:
+                        best_price = discounted
+                        applied_discount = {
+                            "applied_discount_type": discount.type,
+                            "applied_discount_id": str(discount.id),
+                            "applied_discount_value": discount.discount_value,
+                            "applied_discount_unit": discount.discount_type
+                        }
+
+            if applied_discount:
+                return best_price, applied_discount
+            return product["price"], None
+
+        # Apply discounts to each product
+        for prod in suggestions:
+            discounted_price, discount_info = get_discounted_price(prod, discounts, is_buyer_view)
+            prod["discounted_price"] = discounted_price
+            if discount_info:
+                prod.update(discount_info)
+            else:
+                prod["applied_discount_type"] = None
+                prod["applied_discount_id"] = None
+                prod["applied_discount_value"] = None
+                prod["applied_discount_unit"] = None
+
+        # Log the results for debugging
+        print(f"Product suggestions query: {search_query}")
+        print(f"Buyer ID: {buyer_id}")
+        print(f"Results count: {len(suggestions)}")
+        if suggestions:
+            print(f"Sample result: {suggestions[0]}")
+        
+        return JsonResponse({
+            "data": suggestions, 
+            "message": "success", 
+            "status": True, 
+            "token": None
+        })
+        
+    except Exception as e:
+        print(f"Error in productSuggestions: {e}")
+        return JsonResponse({
+            "data": [], 
+            "message": f"Error: {str(e)}", 
+            "status": False, 
+            "token": None
+        })
 
 
 
