@@ -22,7 +22,9 @@ from bson import ObjectId
 from django.http import JsonResponse
 from django.core.exceptions import ObjectDoesNotExist
 from collections import defaultdict
-
+import datetime
+import re
+import pytz
 def obtainProductCategoryList(request):
     # Retrieve parameters from the request
     manufacture_unit_id = request.GET.get('manufacture_unit_id')
@@ -437,8 +439,13 @@ def getIndustryCategoryBrand(request):
 @csrf_exempt
 def seller_dashboard_view(request):
     """
-    API endpoint to return all seller dashboard KPIs.
-    Accepts POST with JSON body {"manufacture_unit_id": "...", "keyword": "..."}
+    API endpoint to return all seller dashboard KPIs with date filtering.
+    Accepts POST with JSON body {
+        "manufacture_unit_id": "...", 
+        "keyword": "...",
+        "start_date": "YYYY-MM-DD",
+        "end_date": "YYYY-MM-DD"
+    }
     """
     if request.method != "POST":
         return JsonResponse({"status": False, "message": "Only POST allowed"}, status=405)
@@ -447,6 +454,8 @@ def seller_dashboard_view(request):
         data = json.loads(request.body.decode("utf-8"))
         manufacture_unit_id = data.get("manufacture_unit_id")
         keyword = data.get("keyword", "").strip().lower()
+        start_date_str = data.get("start_date")  # YYYY-MM-DD format
+        end_date_str = data.get("end_date")      # YYYY-MM-DD format
 
         if not manufacture_unit_id:
             return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
@@ -457,14 +466,36 @@ def seller_dashboard_view(request):
         except Exception:
             manufacture_unit_id_obj = manufacture_unit_id
 
+        # Build date filter (same logic as obtainOrderList)
+        date_match = {}
+        if start_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            local_timezone = datetime.now().astimezone().tzinfo
+            start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+            
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+            else:
+                end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
+
+            start_of_day_utc = start_of_day.astimezone(pytz.utc)
+            end_of_day_utc = end_of_day.astimezone(pytz.utc)
+            date_match["creation_date"] = {"$gte": start_of_day_utc, "$lte": end_of_day_utc}
+
         kpis = {}
 
-        # ------------------- KPI 1: Total Revenue -------------------
+        # ------------------- KPI 1: Total Revenue (WITH DATE FILTER) -------------------
+        revenue_match = {
+            "manufacture_unit_id_str": manufacture_unit_id,
+            "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
+        }
+        # Add date filter if provided
+        if date_match:
+            revenue_match.update(date_match)
+
         revenue_pipeline = [
-            {"$match": {
-                "manufacture_unit_id_str": manufacture_unit_id,
-                "payment_status": {"$in": ["Completed", "Pending", "Paid"]}
-            }},
+            {"$match": revenue_match},
             {"$lookup": {
                 "from": "user",
                 "localField": "customer_id",
@@ -477,6 +508,7 @@ def seller_dashboard_view(request):
                 "order_id": 1,
                 "amount": 1,
                 "payment_status": 1,
+                "creation_date": 1,  # Include creation_date for debugging
                 "buyer_name": {
                     "$concat": [
                         "$user_info.first_name",
@@ -495,13 +527,19 @@ def seller_dashboard_view(request):
                 "order_id": o["order_id"],
                 "amount": o["amount"],
                 "payment_status": o["payment_status"],
-                "buyer_name": o["buyer_name"]
+                "buyer_name": o["buyer_name"],
+                "creation_date": o.get("creation_date")  # Include for verification
             } for o in relevant_orders
         ]
 
-        # ------------------- KPI 2: Total Orders -------------------
+        # ------------------- KPI 2: Total Orders (WITH DATE FILTER) -------------------
+        orders_match = {"manufacture_unit_id_str": manufacture_unit_id}
+        # Add date filter if provided
+        if date_match:
+            orders_match.update(date_match)
+
         orders_pipeline = [
-            {"$match": {"manufacture_unit_id_str": manufacture_unit_id}},
+            {"$match": orders_match},
             {"$lookup": {
                 "from": "user",
                 "localField": "customer_id",
@@ -512,6 +550,7 @@ def seller_dashboard_view(request):
             {"$project": {
                 "_id": 0,
                 "order_id": 1,
+                "creation_date": 1,  # Include creation_date
                 "buyer_name": {
                     "$concat": [
                         "$user_info.first_name",
@@ -525,10 +564,14 @@ def seller_dashboard_view(request):
         all_orders = list(order.objects.aggregate(*orders_pipeline))
         kpis["total_orders"] = len(all_orders)
         kpis["all_order_details"] = [
-            {"order_id": o["order_id"], "buyer_name": o["buyer_name"]} for o in all_orders
+            {
+                "order_id": o["order_id"], 
+                "buyer_name": o["buyer_name"],
+                "creation_date": o.get("creation_date")  # Include for verification
+            } for o in all_orders
         ]
 
-        # ------------------- KPI 3: Total Active Buyers -------------------
+        # ------------------- KPI 3: Total Active Buyers (NO DATE FILTER - Active buyers are not date-dependent) -------------------
         role_obj = role.objects(name="dealer_admin").first()
         dealers_query = user.objects(role_id=role_obj.id)
 
@@ -544,7 +587,7 @@ def seller_dashboard_view(request):
                 ]
             })
 
-        dealers_query = dealers_query.only("first_name", "last_name", "email")  # Reduce memory usage
+        dealers_query = dealers_query.only("first_name", "last_name", "email")
 
         total_active_buyers_list = [
             {
@@ -559,7 +602,7 @@ def seller_dashboard_view(request):
             "buyers": total_active_buyers_list
         }
 
-        # ------------------- KPI 4: Average Order Value -------------------
+        # ------------------- KPI 4: Average Order Value (CALCULATED FROM FILTERED DATA) -------------------
         if kpis["total_orders"] > 0:
             kpis["average_order_value"] = round(kpis["total_revenue"] / kpis["total_orders"], 2)
         else:
@@ -567,10 +610,11 @@ def seller_dashboard_view(request):
 
         kpis["aov_details"] = {
             "total_revenue_used_for_aov": kpis["total_revenue"],
-            "total_orders_used_for_aov": kpis["total_orders"]
+            "total_orders_used_for_aov": kpis["total_orders"],
+            "date_filter_applied": bool(date_match)
         }
 
-        # ------------------- KPI 5: Number of SKUs -------------------
+        # ------------------- KPI 5: Number of SKUs (NO DATE FILTER - SKUs are not date-dependent) -------------------
         sku_pipeline = [
             {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
             {"$group": {"_id": "$sku_number_product_code_item_number"}},
@@ -579,7 +623,7 @@ def seller_dashboard_view(request):
         sku_result = list(product.objects.aggregate(*sku_pipeline))
         kpis["number_of_skus"] = sku_result[0]["num_skus"] if sku_result else 0
 
-        # ------------------- KPI 6: Number of Industries (with names) -------------------
+        # ------------------- KPI 6: Number of Industries (NO DATE FILTER) -------------------
         industry_pipeline = [
             {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
             {"$group": {"_id": "$industry_id_str"}}
@@ -600,7 +644,7 @@ def seller_dashboard_view(request):
             "industries": industry_list
         }
 
-        # ------------------- KPI 7: Number of Brands -------------------
+        # ------------------- KPI 7: Number of Brands (NO DATE FILTER) -------------------
         brand_pipeline = [
             {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
             {"$group": {"_id": "$brand_name"}},
@@ -609,7 +653,7 @@ def seller_dashboard_view(request):
         brand_result = list(product.objects.aggregate(*brand_pipeline))
         kpis["number_of_brands"] = brand_result[0]["num_brands"] if brand_result else 0
 
-        # ------------------- KPI 8: Number of End-Level Categories -------------------
+        # ------------------- KPI 8: Number of End-Level Categories (NO DATE FILTER) -------------------
         category_pipeline = [
             {"$match": {"manufacture_unit_id": manufacture_unit_id_obj}},
             {"$group": {"_id": "$category_id"}},
@@ -618,115 +662,376 @@ def seller_dashboard_view(request):
         category_result = list(product.objects.aggregate(*category_pipeline))
         kpis["number_of_end_level_categories"] = category_result[0]["num_end_level_categories"] if category_result else 0
 
+        # ------------------- ADD FILTER METADATA -------------------
+        kpis["filter_metadata"] = {
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "date_filter_applied": bool(date_match),
+            "keyword_filter": keyword if keyword else None
+        }
+
         return JsonResponse({"status": True, "kpis": kpis})
 
     except Exception as e:
         return JsonResponse({"status": False, "message": str(e)}, status=500)
 
-
-
 from datetime import datetime
 from collections import defaultdict
-
 
 @csrf_exempt
 def sales_analytics_all_timeframes(request):
     """
-    GET params:
-    - manufacture_unit_id (required)
-    - start_date (optional, YYYY-MM-DD)
-    - end_date (optional, YYYY-MM-DD)
-    - payment_status (optional, default: all)
+    API endpoint to return revenue analytics with daily, weekly, monthly, yearly breakdown.
+    Uses the same filtering logic as obtainOrderList.
     """
-    if request.method != "GET":
-        return JsonResponse({"status": False, "message": "Only GET allowed"}, status=405)
-
     try:
-        manufacture_unit_id = request.GET.get("manufacture_unit_id")
-        start_date = request.GET.get("start_date")
-        end_date = request.GET.get("end_date")
-        payment_status = request.GET.get("payment_status")  # e.g. "Completed", "Pending", "Paid", or "all"
+        json_request = JSONParser().parse(request)
+        manufacture_unit_id = json_request['manufacture_unit_id']
+        search_query = json_request.get('search_query', '')
+        start_date_str = json_request.get('start_date')
+        end_date_str = json_request.get('end_date')
+        dealer_list = json_request.get('dealer_list', [])
+        delivery_status = json_request.get('delivery_status', 'all')
+        fulfilled_status = json_request.get('fulfilled_status', 'all')
+        payment_status = json_request.get('payment_status', 'all')
+        industry_id_str = json_request.get('industry_id')
+        is_reorder = json_request.get('is_reorder')
 
-        if not manufacture_unit_id:
-            return JsonResponse({"status": False, "message": "manufacture_unit_id is required"}, status=400)
-
-        # Build query filter
-        match = {"manufacture_unit_id_str": manufacture_unit_id}
-        if payment_status and payment_status != "all":
-            match["payment_status"] = payment_status
+        # ✅ UPDATED: Same filtering logic as obtainOrderList with proper payment status handling
+        status_match = {
+            'manufacture_unit_id_str': manufacture_unit_id
+        }
+        if delivery_status != "all":
+            status_match['delivery_status'] = delivery_status
+        if fulfilled_status != "all":
+            status_match['fulfilled_status'] = fulfilled_status
+        
+        # ✅ UPDATED: Payment status filtering logic
+        if payment_status != "all":
+            status_match['payment_status'] = payment_status
         else:
-            match["payment_status"] = {"$in": ["Completed", "Pending", "Paid"]}
+            # ✅ When payment_status is "all", only include valid payment statuses
+            status_match['payment_status'] = {"$in": ["Completed", "Pending", "Paid"]}
+            
+        if industry_id_str is not None:
+            status_match['industry_id_str'] = industry_id_str
+        if is_reorder is not None and is_reorder != "" and is_reorder != "all":
+            is_reorder = is_reorder.lower()
+            status_match['is_reorder'] = True if is_reorder == "yes" else False
 
-        if start_date or end_date:
-            date_filter = {}
-            if start_date:
-                date_filter["$gte"] = datetime.strptime(start_date, "%Y-%m-%d")
-            if end_date:
-                date_filter["$lte"] = datetime.strptime(end_date, "%Y-%m-%d")
-            match["creation_date"] = date_filter
+        # ✅ Same base pipeline as obtainOrderList
+        base_pipeline = [
+            {"$match": status_match},
+            {
+                "$lookup": {
+                    "from": "user",
+                    "localField": "customer_id",
+                    "foreignField": "_id",
+                    "as": "user_ins"
+                }
+            },
+            {"$unwind": "$user_ins"}
+        ]
 
-        # Fetch orders from DB
-        order_list = list(order.objects(__raw__=match).only(
-            "creation_date", "payment_status", "amount"
-        ).as_pymongo())
+        if dealer_list:
+            dealer_list = [ObjectId(ins) for ins in dealer_list]
+            base_pipeline.append({
+                "$match": {"user_ins._id": {"$in": dealer_list}}
+            })
 
-        def get_period(dt, group_by):
-            if group_by == "daily":
-                return dt.strftime("%Y-%m-%d")
-            elif group_by == "weekly":
-                return f"{dt.year}-W{dt.isocalendar()[1]:02d}"
-            elif group_by == "monthly":
-                return dt.strftime("%Y-%m")
-            elif group_by == "yearly":
-                return dt.strftime("%Y")
+        # ✅ Same date filtering logic as obtainOrderList
+        if start_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            local_timezone = datetime.now().astimezone().tzinfo
+            start_of_day = start_date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(local_timezone)
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                end_of_day = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
             else:
-                return "total"
+                end_of_day = start_date.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(local_timezone)
 
-        def aggregate_by(order_list, group_by):
-            analytics = defaultdict(lambda: defaultdict(float))
-            for ord_doc in order_list:
-                try:
-                    dt = ord_doc["creation_date"]
-                    if isinstance(dt, str):
-                        dt = datetime.strptime(dt[:10], "%Y-%m-%d")
-                except Exception:
-                    continue
-                period = get_period(dt, group_by)
-                status = ord_doc.get("payment_status", "Unknown")
-                amount = float(ord_doc.get("amount", 0) or 0)
-                analytics[period][status] += amount
-            result = []
-            for period, status_dict in sorted(analytics.items()):
-                period_data = {"period": period}
-                for status in ["Completed", "Pending", "Paid"]:
-                    period_data[status] = status_dict.get(status, 0)
-                period_data["total"] = sum(status_dict.values())
-                result.append(period_data)
-            return result
+            start_of_day_utc = start_of_day.astimezone(pytz.utc)
+            end_of_day_utc = end_of_day.astimezone(pytz.utc)
+            base_pipeline.append({
+                "$match": {
+                    "creation_date": {"$gte": start_of_day_utc, "$lte": end_of_day_utc}
+                }
+            })
 
-        daily = aggregate_by(order_list, "daily")
-        weekly = aggregate_by(order_list, "weekly")
-        monthly = aggregate_by(order_list, "monthly")
-        yearly = aggregate_by(order_list, "yearly")
+        # ✅ Same search filtering logic as obtainOrderList
+        search_pipeline = []
+        if search_query:
+            search_pipeline = [
+                {
+                    "$lookup": {
+                        "from": "address",
+                        "localField": "shipping_address_id",
+                        "foreignField": "_id",
+                        "as": "address_ins"
+                    }
+                },
+                {
+                    "$unwind": {
+                        "path": "$address_ins",
+                        "preserveNullAndEmptyArrays": True
+                    }
+                },
+                {
+                    "$addFields": {
+                        "dealer_name": {
+                            "$concat": [
+                                "$user_ins.first_name",
+                                {"$cond": {"if": {"$ne": ["$user_ins.last_name", None]}, "then": " ", "else": ""}},
+                                {"$ifNull": ["$user_ins.last_name", ""]}
+                            ]
+                        }
+                    }
+                },
+                {"$match": {
+                    "$or": [
+                        {"dealer_name": {"$regex": search_query, "$options": "i"}},
+                        {"order_id": {"$regex": search_query, "$options": "i"}},
+                        {"address_ins.city": {"$regex": search_query, "$options": "i"}},
+                        {"address_ins.country": {"$regex": search_query, "$options": "i"}},
+                        {"delivery_status": {"$regex": search_query, "$options": "i"}},
+                        {"payment_status": {"$regex": search_query, "$options": "i"}}
+                    ]
+                }}
+            ]
 
-        total = defaultdict(float)
-        for ord_doc in order_list:
-            status = ord_doc.get("payment_status", "Unknown")
-            amount = float(ord_doc.get("amount", 0) or 0)
-            total[status] += amount
-        total_summary = {status: total.get(status, 0) for status in ["Completed", "Pending", "Paid"]}
-        total_summary["total"] = sum(total_summary.values())
+        analytics = {}
+
+        # ------------------- DAILY REVENUE BREAKDOWN -------------------
+        daily_pipeline = base_pipeline + search_pipeline + [
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$creation_date"},
+                        "month": {"$month": "$creation_date"},
+                        "day": {"$dayOfMonth": "$creation_date"}
+                    },
+                    "total_revenue": {"$sum": "$amount"},
+                    "total_orders": {"$sum": 1},
+                    "avg_order_value": {"$avg": "$amount"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "date": {
+                        "$dateFromParts": {
+                            "year": "$_id.year",
+                            "month": "$_id.month",
+                            "day": "$_id.day"
+                        }
+                    },
+                    "date_string": {
+                        "$concat": [
+                            {"$toString": "$_id.year"}, "-",
+                            {"$cond": {"if": {"$lt": ["$_id.month", 10]}, "then": {"$concat": ["0", {"$toString": "$_id.month"}]}, "else": {"$toString": "$_id.month"}}}, "-",
+                            {"$cond": {"if": {"$lt": ["$_id.day", 10]}, "then": {"$concat": ["0", {"$toString": "$_id.day"}]}, "else": {"$toString": "$_id.day"}}}
+                        ]
+                    },
+                    "total_revenue": {"$round": ["$total_revenue", 2]},
+                    "total_orders": 1,
+                    "avg_order_value": {"$round": ["$avg_order_value", 2]},
+                    "year": "$_id.year",
+                    "month": "$_id.month",
+                    "day": "$_id.day"
+                }
+            },
+            {"$sort": {"date": 1}}
+        ]
+
+        daily_revenue = list(order.objects.aggregate(*daily_pipeline))
+        analytics["daily"] = daily_revenue
+
+        # ------------------- WEEKLY REVENUE BREAKDOWN -------------------
+        weekly_pipeline = base_pipeline + search_pipeline + [
+            {
+                "$addFields": {
+                    "week_start": {
+                        "$dateFromParts": {
+                            "isoWeekYear": {"$isoWeekYear": "$creation_date"},
+                            "isoWeek": {"$isoWeek": "$creation_date"},
+                            "isoDayOfWeek": 1
+                        }
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$isoWeekYear": "$creation_date"},
+                        "week": {"$isoWeek": "$creation_date"}
+                    },
+                    "total_revenue": {"$sum": "$amount"},
+                    "total_orders": {"$sum": 1},
+                    "avg_order_value": {"$avg": "$amount"},
+                    "week_start": {"$first": "$week_start"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "week_string": {
+                        "$concat": [
+                            {"$toString": "$_id.year"}, "-W",
+                            {"$cond": {"if": {"$lt": ["$_id.week", 10]}, "then": {"$concat": ["0", {"$toString": "$_id.week"}]}, "else": {"$toString": "$_id.week"}}}
+                        ]
+                    },
+                    "year": "$_id.year",
+                    "week": "$_id.week",
+                    "week_start": 1,
+                    "total_revenue": {"$round": ["$total_revenue", 2]},
+                    "total_orders": 1,
+                    "avg_order_value": {"$round": ["$avg_order_value", 2]}
+                }
+            },
+            {"$sort": {"year": 1, "week": 1}}
+        ]
+
+        weekly_revenue = list(order.objects.aggregate(*weekly_pipeline))
+        analytics["weekly"] = weekly_revenue
+
+        # ------------------- MONTHLY REVENUE BREAKDOWN -------------------
+        monthly_pipeline = base_pipeline + search_pipeline + [
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$creation_date"},
+                        "month": {"$month": "$creation_date"}
+                    },
+                    "total_revenue": {"$sum": "$amount"},
+                    "total_orders": {"$sum": 1},
+                    "avg_order_value": {"$avg": "$amount"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "month_string": {
+                        "$concat": [
+                            {"$toString": "$_id.year"}, "-",
+                            {"$cond": {"if": {"$lt": ["$_id.month", 10]}, "then": {"$concat": ["0", {"$toString": "$_id.month"}]}, "else": {"$toString": "$_id.month"}}}
+                        ]
+                    },
+                    "year": "$_id.year",
+                    "month": "$_id.month",
+                    "month_name": {
+                        "$switch": {
+                            "branches": [
+                                {"case": {"$eq": ["$_id.month", 1]}, "then": "January"},
+                                {"case": {"$eq": ["$_id.month", 2]}, "then": "February"},
+                                {"case": {"$eq": ["$_id.month", 3]}, "then": "March"},
+                                {"case": {"$eq": ["$_id.month", 4]}, "then": "April"},
+                                {"case": {"$eq": ["$_id.month", 5]}, "then": "May"},
+                                {"case": {"$eq": ["$_id.month", 6]}, "then": "June"},
+                                {"case": {"$eq": ["$_id.month", 7]}, "then": "July"},
+                                {"case": {"$eq": ["$_id.month", 8]}, "then": "August"},
+                                {"case": {"$eq": ["$_id.month", 9]}, "then": "September"},
+                                {"case": {"$eq": ["$_id.month", 10]}, "then": "October"},
+                                {"case": {"$eq": ["$_id.month", 11]}, "then": "November"},
+                                {"case": {"$eq": ["$_id.month", 12]}, "then": "December"}
+                            ],
+                            "default": "Unknown"
+                        }
+                    },
+                    "total_revenue": {"$round": ["$total_revenue", 2]},
+                    "total_orders": 1,
+                    "avg_order_value": {"$round": ["$avg_order_value", 2]}
+                }
+            },
+            {"$sort": {"year": 1, "month": 1}}
+        ]
+
+        monthly_revenue = list(order.objects.aggregate(*monthly_pipeline))
+        analytics["monthly"] = monthly_revenue
+
+        # ------------------- YEARLY REVENUE BREAKDOWN -------------------
+        yearly_pipeline = base_pipeline + search_pipeline + [
+            {
+                "$group": {
+                    "_id": {
+                        "year": {"$year": "$creation_date"}
+                    },
+                    "total_revenue": {"$sum": "$amount"},
+                    "total_orders": {"$sum": 1},
+                    "avg_order_value": {"$avg": "$amount"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "year": "$_id.year",
+                    "total_revenue": {"$round": ["$total_revenue", 2]},
+                    "total_orders": 1,
+                    "avg_order_value": {"$round": ["$avg_order_value", 2]}
+                }
+            },
+            {"$sort": {"year": 1}}
+        ]
+
+        yearly_revenue = list(order.objects.aggregate(*yearly_pipeline))
+        analytics["yearly"] = yearly_revenue
+
+        # ------------------- SUMMARY STATISTICS -------------------
+        summary_pipeline = base_pipeline + search_pipeline + [
+            {
+                "$group": {
+                    "_id": None,
+                    "total_revenue": {"$sum": "$amount"},
+                    "total_orders": {"$sum": 1},
+                    "avg_order_value": {"$avg": "$amount"},
+                    "max_order_value": {"$max": "$amount"},
+                    "min_order_value": {"$min": "$amount"}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "total_revenue": {"$round": ["$total_revenue", 2]},
+                    "total_orders": 1,
+                    "avg_order_value": {"$round": ["$avg_order_value", 2]},
+                    "max_order_value": {"$round": ["$max_order_value", 2]},
+                    "min_order_value": {"$round": ["$min_order_value", 2]}
+                }
+            }
+        ]
+
+        summary_result = list(order.objects.aggregate(*summary_pipeline))
+        analytics["summary"] = summary_result[0] if summary_result else {
+            "total_revenue": 0,
+            "total_orders": 0,
+            "avg_order_value": 0,
+            "max_order_value": 0,
+            "min_order_value": 0
+        }
+
+        # ✅ UPDATED: Enhanced metadata with payment status info
+        analytics["metadata"] = {
+            "manufacture_unit_id": manufacture_unit_id,
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "search_query": search_query,
+            "delivery_status": delivery_status,
+            "fulfilled_status": fulfilled_status,
+            "payment_status": payment_status,
+            "payment_status_applied": ["Completed", "Pending", "Paid"] if payment_status == "all" else [payment_status],
+            "industry_id": industry_id_str,
+            "is_reorder": is_reorder,
+            "dealer_count": len(dealer_list) if dealer_list else 0,
+            "generated_at": datetime.now().isoformat()
+        }
 
         return JsonResponse({
             "status": True,
-            "daily": daily,
-            "weekly": weekly,
-            "monthly": monthly,
-            "yearly": yearly,
-            "total": total_summary
-        })
+            "analytics": analytics
+        }, safe=False)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({"status": False, "message": str(e)}, status=500)
 
 
@@ -839,6 +1144,9 @@ def obtainbrandList(request):
                 b["discount_id"] = None
 
     return JsonResponse({"data": brand_list, "message": "success", "status": True, "token": None})
+
+
+
 
 def get_end_level_category_ids(category_oid, buyer_id=None):
     pipeline = [
